@@ -10,6 +10,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Metadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.Player
@@ -17,7 +18,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.exoplayer.source.MediaParserExtractorAdapter
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.session.MediaSession
@@ -34,6 +34,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withTimeoutOrNull
@@ -56,23 +57,16 @@ class PlayerManager private constructor(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    // M4B chapters ride the platform MediaParser path; classic extractors do
-    // not parse MP4 chapter atoms. The MediaParser MP3 extractor seeks badly
-    // backwards on this device, so MP3s get the classic Mp3Extractor instead.
-    private val m4bSourceFactory = ProgressiveMediaSource.Factory(
-        DefaultDataSource.Factory(context),
-        MediaParserExtractorAdapter.Factory(),
-    )
-    private val mp3SourceFactory = ProgressiveMediaSource.Factory(
+    // Classic extractors for both formats: M4B chapters come via
+    // Mp4ChapterParser (MediaParser never delivered them on this device), and
+    // the MediaParser MP3 extractor seeks badly backwards here.
+    private val mediaSourceFactory = ProgressiveMediaSource.Factory(
         DefaultDataSource.Factory(context),
         DefaultExtractorsFactory(),
     )
 
-    private fun sourceFactoryFor(book: Book) =
-        if (book.file.extension.lowercase() == "m4b") m4bSourceFactory else mp3SourceFactory
-
     val player: ExoPlayer = ExoPlayer.Builder(context)
-        .setMediaSourceFactory(m4bSourceFactory)
+        .setMediaSourceFactory(mediaSourceFactory)
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -104,6 +98,10 @@ class PlayerManager private constructor(private val context: Context) {
     val speed = MutableStateFlow(1.0f)
     val chapters = MutableStateFlow<List<ChapterUi>>(emptyList())
     val sleepEndMs = MutableStateFlow<Long?>(null)
+    /** Armed sleep-timer option (15/30/60/120), kept across re-arms and restarts. */
+    val sleepMinutes = MutableStateFlow<Int?>(null)
+    /** Last playback error to show on the now-playing screen; null = fine. */
+    val playbackError = MutableStateFlow<String?>(null)
 
     private var positionJob: Job? = null
     private var chapterJob: Job? = null
@@ -120,9 +118,19 @@ class PlayerManager private constructor(private val context: Context) {
             player.setPlaybackSpeed(savedSpeed)
             val savedSleepEnd = PlayerPrefs.getSleepEndMs(context)?.takeIf { it > System.currentTimeMillis() }
             sleepEndMs.value = savedSleepEnd
-            if (savedSleepEnd != null) startSleepMonitor() // re-arm after process/service restart
+            if (savedSleepEnd != null) {
+                // Re-arm after process/service restart; keep the armed option
+                // with the timer so the chip cycle stays correct mid-countdown.
+                sleepMinutes.value = PlayerPrefs.getSleepMinutes(context) ?: 15
+                startSleepMonitor()
+            }
         }
         player.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                Log.d(TAG, "playerError: ${error.errorCodeName} (${error.message})")
+                playbackError.value = error.errorCodeName
+            }
+
             override fun onIsPlayingChanged(playing: Boolean) {
                 Log.d(TAG, "onIsPlayingChanged: $playing")
                 isPlaying.value = playing
@@ -140,6 +148,7 @@ class PlayerManager private constructor(private val context: Context) {
                 // Any in-flight chapter parse belongs to the previous item.
                 chapterJob?.cancel()
                 chapterJob = null
+                playbackError.value = null
                 nowPlaying.value = mediaItem?.let {
                     BooksRepository.bookByName(context, it.mediaId)
                 }
@@ -178,6 +187,7 @@ class PlayerManager private constructor(private val context: Context) {
 
     /** Play a book, resuming from its persisted position. */
     fun playBook(book: Book) {
+        playbackError.value = null
         scope.launch {
             val saved = PlayerPrefs.getPos(context, book.id)
             Log.d(TAG, "playBook '${book.id}' resume at $saved ms")
@@ -191,7 +201,7 @@ class PlayerManager private constructor(private val context: Context) {
                         .build(),
                 )
                 .build()
-            player.setMediaSource(sourceFactoryFor(book).createMediaSource(item), saved.coerceAtLeast(0))
+            player.setMediaItem(item, saved.coerceAtLeast(0))
             player.prepare()
             // Finished book: restart from the beginning instead of hanging at EOF.
             // Duration is only known async, so wait briefly for it.
@@ -210,14 +220,17 @@ class PlayerManager private constructor(private val context: Context) {
             // is immutable while a book exists, a re-upload rewrites it.
             if (book.file.extension.lowercase() == "m4b") {
                 chapterJob?.cancel()
-                chapterJob = scope.launch(Dispatchers.IO) {
-                    val key = "${book.id}|${book.file.length()}|${book.file.lastModified()}"
-                    val parsed = chapterCache[key] ?: Mp4ChapterParser.parse(book.file)
-                        .also { chapterCache[key] = it }
+                chapterJob = scope.launch {
+                    val parsed = withContext(Dispatchers.IO) {
+                        val key = "${book.id}|${book.file.length()}|${book.file.lastModified()}"
+                        chapterCache[key] ?: Mp4ChapterParser.parse(book.file)
+                            .also { chapterCache[key] = it }
+                    }
                     Log.d(TAG, "Mp4ChapterParser: ${parsed.size} chapters: " +
                         parsed.take(3).joinToString { "${it.startMs}ms '${it.title}'" })
                     // Only publish if this book is still current — a slow parse
                     // must not clobber the book the user already switched to.
+                    // (Player access is main-thread-only, so this runs here.)
                     if (parsed.isNotEmpty() && player.currentMediaItem?.mediaId == book.id) {
                         chapters.value = parsed
                     }
@@ -252,7 +265,9 @@ class PlayerManager private constructor(private val context: Context) {
         scope.launch {
             val end = minutes?.let { System.currentTimeMillis() + it * 60_000L }
             PlayerPrefs.setSleepEndMs(context, end)
+            PlayerPrefs.setSleepMinutes(context, minutes)
             sleepEndMs.value = end
+            sleepMinutes.value = minutes
             startSleepMonitor()
         }
     }
@@ -265,7 +280,9 @@ class PlayerManager private constructor(private val context: Context) {
                 if (System.currentTimeMillis() >= end) {
                     player.pause()
                     PlayerPrefs.setSleepEndMs(context, null)
+                    PlayerPrefs.setSleepMinutes(context, null)
                     sleepEndMs.value = null
+                    sleepMinutes.value = null
                     return@launch
                 }
                 delay(1_000)

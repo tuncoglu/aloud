@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,8 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
     val chapters by manager.chapters.collectAsState()
     val speed by manager.speed.collectAsState()
     val sleepEndMs by manager.sleepEndMs.collectAsState()
+    val sleepArmed by manager.sleepMinutes.collectAsState()
+    val error by manager.playbackError.collectAsState()
 
     // Tick once a minute so the sleep countdown stays fresh.
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -68,6 +71,14 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
                 "${fmtTime(positionMs)}/${fmtTime(durationMs)}",
             maxLines = 1,
         )
+        error?.let {
+            Text(
+                text = "⚠ $it",
+                color = Color.Red,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+        }
 
         Row(
             modifier = Modifier.padding(top = 12.dp),
@@ -108,14 +119,16 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
                 manager.setSpeed(next)
             }) { Text("%.2f×".format(speed)) }
 
+            // Cycle from the armed option, not the shrunk remaining minutes:
+            // 15 → 30 → 60 → 120 → off, mid-countdown included.
             Button(onClick = {
-                val next = if (sleepEndMs == null) SLEEP_OPTIONS.first()
-                else {
-                    val idx = SLEEP_OPTIONS.indexOf((sleepRemainingMin ?: 0).coerceAtLeast(SLEEP_OPTIONS.first()))
-                    SLEEP_OPTIONS.getOrElse(idx + 1) { -1 } // -1 -> off
+                val next = when (val idx = sleepArmed?.let { SLEEP_OPTIONS.indexOf(it) } ?: -1) {
+                    -1 -> SLEEP_OPTIONS.first()
+                    SLEEP_OPTIONS.lastIndex -> null // off
+                    else -> SLEEP_OPTIONS[idx + 1]
                 }
-                manager.setSleepTimer(if (next == -1) null else next)
-            }) { Text(if (sleepRemainingMin != null) "Zzz ${sleepRemainingMin}m" else "Sleep") }
+                manager.setSleepTimer(next)
+            }) { Text(if (sleepEndMs != null) "Zzz ${sleepRemainingMin}m" else "Sleep") }
         }
     }
 }

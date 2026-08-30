@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -23,6 +24,7 @@ object PlayerPrefs {
     private fun posKey(bookId: String) = longPreferencesKey("pos:$bookId")
     private val KEY_SPEED = floatPreferencesKey("speed")
     private val KEY_SLEEP_END_MS = longPreferencesKey("sleepEndAtMs")
+    private val KEY_SLEEP_MINUTES = intPreferencesKey("sleepMinutes")
     private val KEY_LAST_BOOK = stringPreferencesKey("lastBook")
 
     suspend fun getPos(context: Context, bookId: String): Long =
@@ -50,6 +52,16 @@ object PlayerPrefs {
         context.dataStore.edit {
             if (endMs == null) it.remove(KEY_SLEEP_END_MS)
             else it[KEY_SLEEP_END_MS] = endMs
+        }
+    }
+
+    suspend fun getSleepMinutes(context: Context): Int? =
+        context.dataStore.data.first()[KEY_SLEEP_MINUTES]
+
+    suspend fun setSleepMinutes(context: Context, minutes: Int?) {
+        context.dataStore.edit {
+            if (minutes == null) it.remove(KEY_SLEEP_MINUTES)
+            else it[KEY_SLEEP_MINUTES] = minutes
         }
     }
 
