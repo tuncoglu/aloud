@@ -34,7 +34,7 @@ fun UploaderScreen() {
     fun ensurePermissionsAndStart() {
         val wanted = buildList {
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-            if (Build.VERSION.SDK_INT >= 37) add("android.permission.ACCESS_LOCAL_NETWORK")
+            if (Build.VERSION.SDK_INT >= 37) add(Manifest.permission.ACCESS_LOCAL_NETWORK)
         }.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (wanted.isEmpty()) {
             UploadServerService.start(context)

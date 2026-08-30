@@ -18,18 +18,27 @@ data class Book(
 object BooksRepository {
 
     const val BOOKS_DIR = "books"
+    const val PART_SUFFIX = ".part"
     private val EXTENSIONS = setOf("mp3", "m4b")
+
+    /** True for a file name the uploader accepts and the scanner picks up. */
+    fun isSupportedName(name: String): Boolean =
+        name.substringAfterLast('.', "").lowercase() in EXTENSIONS
 
     fun booksDir(context: Context): File =
         File(context.filesDir, BOOKS_DIR).apply { mkdirs() }
 
     fun list(context: Context): List<Book> =
-        booksDir(context).listFiles { f -> f.isFile && !f.name.endsWith(".part") }
+        booksDir(context).listFiles { f -> f.isFile && !f.name.endsWith(PART_SUFFIX) }
             .orEmpty()
-            .filter { it.extension.lowercase() in EXTENSIONS }
+            .filter { isSupportedName(it.name) }
             .map { Book(id = it.name, title = it.nameWithoutExtension, file = it) }
             .sortedBy { it.title.lowercase() }
 
-    fun bookByName(context: Context, id: String): Book? =
-        list(context).firstOrNull { it.id == id }
+    /** Media ids are file names, so a name lookup needs no directory scan. */
+    fun bookByName(context: Context, id: String): Book? {
+        val f = File(booksDir(context), id)
+        if (!f.isFile || !isSupportedName(f.name)) return null
+        return Book(id = f.name, title = f.nameWithoutExtension, file = f)
+    }
 }

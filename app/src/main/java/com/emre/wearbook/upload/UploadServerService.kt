@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import com.emre.wearbook.R
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -36,12 +37,12 @@ class UploadServerService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("WearBite uploads")
+            .setContentTitle(getString(R.string.app_name) + " uploads")
             .setOngoing(true)
             .build()
         startForeground(1, notification)
-        server = UploadServer(this) {}
-        server?.start()
+        server = UploadServer(this)
+        server?.start(PORT)
         running.value = true
     }
 

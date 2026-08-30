@@ -7,25 +7,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.Text
 import com.emre.wearbook.playback.PlayerManager
+import com.emre.wearbook.playback.chapterIndexAt
 
 @Composable
 fun ChapterScreen(manager: PlayerManager) {
-    val context = LocalContext.current
     val chapters by manager.chapters.collectAsState()
     val positionMs by manager.positionMs.collectAsState()
-    val current = chapters.indexOfLast { it.startMs <= positionMs }
+    val current = chapters.chapterIndexAt(positionMs)
 
     if (chapters.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -39,8 +38,7 @@ fun ChapterScreen(manager: PlayerManager) {
         contentPadding = PaddingValues(top = 40.dp),
     ) {
         item { ListHeader { Text("Chapters") } }
-        items(chapters, key = { it.startMs }) { chapter ->
-            val i = chapters.indexOf(chapter)
+        itemsIndexed(chapters) { i, chapter ->
             Text(
                 text = "${i + 1}. ${chapter.title}",
                 color = if (i == current) Color.Cyan else Color.Unspecified,

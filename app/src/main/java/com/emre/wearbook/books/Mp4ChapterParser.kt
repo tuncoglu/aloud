@@ -1,8 +1,11 @@
 package com.emre.wearbook.books
 
+import android.util.Log
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
+
+private const val TAG = "WearBite"
 
 /**
  * Minimal ISO-BMFF chapter parser for .m4b files. Supports the two formats
@@ -35,29 +38,26 @@ object Mp4ChapterParser {
                     }
                 }
 
-                // 2. QuickTime chapter track
+                // 2. QuickTime chapter track. Walk each trak's children once,
+                // collecting (trakId, chapterRefId); the referencing trak can be
+                // anywhere in order. v0/v1 tkhd: version/flags(4) + trackId(4).
                 val traks = moovChildren.filter { it.type == "trak" }
-                val chapTrackId = traks.firstNotNullOfOrNull { trak ->
-                    val tref = boxChildren(raf, trak.payloadStart, trak.end)
-                        .firstOrNull { it.type == "tref" }
-                    val chap = tref?.let {
-                        boxChildren(raf, it.payloadStart, it.end).firstOrNull { c -> c.type == "chap" }
+                val trakInfos = traks.map { trak ->
+                    val children = boxChildren(raf, trak.payloadStart, trak.end)
+                    val tkhd = children.firstOrNull { it.type == "tkhd" }
+                    val chap = children.firstOrNull { it.type == "tref" }?.let { tref ->
+                        boxChildren(raf, tref.payloadStart, tref.end).firstOrNull { it.type == "chap" }
                     }
-                    chap?.let { readInt(raf, it.payloadStart) }
+                    Triple(trak, tkhd?.let { readInt(raf, it.payloadStart + 8) }, chap?.let { readInt(raf, it.payloadStart) })
                 }
-                if (chapTrackId != null) {
-                    val chapterTrak = traks.firstOrNull { trak ->
-                        val tkhd = boxChildren(raf, trak.payloadStart, trak.end)
-                            .firstOrNull { it.type == "tkhd" }
-                        tkhd?.let { readInt(raf, it.payloadStart + 8) } == chapTrackId // version/flags(4) + trackId(4)
-                    }
-                    if (chapterTrak != null) {
-                        parseQuickTimeChapters(raf, chapterTrak)?.let { return it }
-                    }
+                val refTrakId = trakInfos.firstNotNullOfOrNull { it.third }
+                val chapterTrak = refTrakId?.let { id -> trakInfos.firstOrNull { it.second == id }?.first }
+                if (chapterTrak != null) {
+                    parseQuickTimeChapters(raf, chapterTrak)?.let { return it }
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.d("WearBite", "chapter parse failed: $e")
+            Log.d(TAG, "chapter parse failed: $e")
         }
         return emptyList()
     }

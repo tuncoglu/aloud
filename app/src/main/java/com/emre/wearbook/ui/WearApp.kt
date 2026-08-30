@@ -8,7 +8,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.playback.PlayerManager
+import com.emre.wearbook.upload.UploadServerService
 
 private sealed interface Screen {
     data object Library : Screen
@@ -32,12 +34,12 @@ fun WearApp(autoplayBookId: String? = null, initialScreen: String? = null, start
     }
 
     LaunchedEffect(startUploader) {
-        if (startUploader) com.emre.wearbook.upload.UploadServerService.start(context)
+        if (startUploader) UploadServerService.start(context)
     }
 
     LaunchedEffect(autoplayBookId) {
         if (autoplayBookId != null) {
-            com.emre.wearbook.books.BooksRepository.bookByName(context, autoplayBookId)?.let {
+            BooksRepository.bookByName(context, autoplayBookId)?.let {
                 manager.playBook(it)
                 screen = Screen.NowPlaying
             }

@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
 import com.emre.wearbook.playback.PlayerManager
+import com.emre.wearbook.playback.chapterIndexAt
+import kotlinx.coroutines.delay
 
 private val SPEED_OPTIONS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 private val SLEEP_OPTIONS = listOf(15, 30, 60, 120)
@@ -38,13 +40,13 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(sleepEndMs) {
         while (sleepEndMs != null) {
-            kotlinx.coroutines.delay(30_000)
+            delay(30_000)
             now = System.currentTimeMillis()
         }
     }
 
     val chapterIndex = remember(positionMs, chapters) {
-        chapters.indexOfLast { it.startMs <= positionMs }
+        chapters.chapterIndexAt(positionMs)
     }
     val sleepRemainingMin = sleepEndMs?.let { ((it - now) / 60_000).toInt().coerceAtLeast(1) }
 
@@ -71,16 +73,23 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
             modifier = Modifier.padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Chapters when present; otherwise -30s/+30s rewind/fast-forward.
             Button(
-                onClick = { manager.skipToChapter((chapterIndex - 1).coerceAtLeast(0)) },
-                enabled = chapters.isNotEmpty() && chapterIndex > 0,
+                onClick = {
+                    if (chapters.isNotEmpty()) manager.skipToChapter((chapterIndex - 1).coerceAtLeast(0))
+                    else manager.skipRelative(-30_000)
+                },
+                enabled = if (chapters.isNotEmpty()) chapterIndex > 0 else durationMs > 0,
             ) { Text("⏮") }
             Button(onClick = { manager.togglePlayPause() }) {
                 Text(if (isPlaying) "⏸" else "▶")
             }
             Button(
-                onClick = { manager.skipToChapter(chapterIndex + 1) },
-                enabled = chapters.isNotEmpty() && chapterIndex < chapters.size - 1,
+                onClick = {
+                    if (chapters.isNotEmpty()) manager.skipToChapter(chapterIndex + 1)
+                    else manager.skipRelative(30_000)
+                },
+                enabled = if (chapters.isNotEmpty()) chapterIndex < chapters.size - 1 else durationMs > 0,
             ) { Text("⏭") }
         }
 

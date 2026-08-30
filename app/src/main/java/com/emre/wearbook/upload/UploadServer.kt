@@ -8,6 +8,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.cio.CIO
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveStream
 import io.ktor.server.response.respondText
@@ -22,10 +23,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.RandomAccessFile
-import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
@@ -38,23 +37,19 @@ import java.net.NetworkInterface
  *   GET    /books                   -> JSON list
  *   DELETE /book?name=              -> delete file + its progress positions
  */
-class UploadServer(
-    private val context: Context,
-    private val onEvent: (String) -> Unit = {},
-) {
+class UploadServer(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var server: io.ktor.server.engine.EmbeddedServer<*, *>? = null
+    private var server: EmbeddedServer<*, *>? = null
     private var autoStopJob: Job? = null
     @Volatile private var lastActivityMs = System.currentTimeMillis()
 
     val isRunning: Boolean get() = server != null
 
-    fun start(port: Int = 8080) {
+    fun start(port: Int) {
         if (server != null) return
         server = embeddedServer(CIO, port = port, host = "0.0.0.0") { module() }.start(wait = false)
         startAutoStop()
-        onEvent("server started on $port")
     }
 
     fun stop() {
@@ -62,7 +57,6 @@ class UploadServer(
         autoStopJob = null
         server?.stop(0, 0)
         server = null
-        onEvent("server stopped")
     }
 
     private fun Application.module() {
@@ -80,7 +74,7 @@ class UploadServer(
                     return@post
                 }
                 val bytes = call.receiveStream().readBytes()
-                val part = File(BooksRepository.booksDir(context), "$name.part")
+                val part = File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}")
                 RandomAccessFile(part, "rw").use { raf ->
                     raf.seek(offset)
                     raf.write(bytes)
@@ -90,7 +84,6 @@ class UploadServer(
                 if (total > 0 && received >= total && bytes.isNotEmpty()) {
                     val final = part.resolveSibling(name)
                     part.renameTo(final)
-                    onEvent("uploaded: $name")
                     call.respondText("{\"ok\":true,\"received\":$received,\"complete\":true}", ContentType.Application.Json)
                 } else {
                     call.respondText("{\"ok\":true,\"received\":$received}", ContentType.Application.Json)
@@ -109,8 +102,8 @@ class UploadServer(
                 val name = sanitizeName(call.request.queryParameters["name"])
                 if (name != null) {
                     File(BooksRepository.booksDir(context), name).delete()
-                    File(BooksRepository.booksDir(context), "$name.part").delete()
-                    runBlocking { PlayerPrefs.deletePos(context, name) }
+                    File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}").delete()
+                    PlayerPrefs.deletePos(context, name)
                     lastActivityMs = System.currentTimeMillis()
                     call.respondText("{\"ok\":true}", ContentType.Application.Json)
                 } else {
@@ -123,11 +116,8 @@ class UploadServer(
     private fun sanitizeName(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
         val cleaned = raw.replace(Regex("[^A-Za-z0-9._ -]"), "").trim()
-        if (cleaned.contains("..") || cleaned.endsWith(".part")) return null
-        return when (cleaned.substringAfterLast('.', "").lowercase()) {
-            "mp3", "m4b" -> cleaned
-            else -> null
-        }
+        if (cleaned.contains("..") || cleaned.endsWith(BooksRepository.PART_SUFFIX)) return null
+        return if (BooksRepository.isSupportedName(cleaned)) cleaned else null
     }
 
     private fun startAutoStop() {
