@@ -18,10 +18,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.Text
@@ -54,31 +54,31 @@ fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit) {
         return
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 40.dp),
-    ) {
-        item { ListHeader { Text("My audiobooks") } }
-        items(books, key = { it.id }) { book ->
-            Text(
-                text = book.title,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onPlay(book) }
-                    .padding(vertical = 10.dp, horizontal = 16.dp),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(top = 40.dp),
+        ) {
+            item { ListHeader { Text("My audiobooks") } }
+            items(books, key = { it.id }) { book ->
+                Text(
+                    text = book.title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlay(book) }
+                        .padding(vertical = 10.dp, horizontal = 16.dp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        item {
-            Text(
-                text = "Uploader…",
-                color = Color.Gray,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenUploader }
-                    .padding(vertical = 10.dp, horizontal = 16.dp),
-            )
-        }
+        // Pinned footer: a last list item scrolled below the bezel is invisible
+        // and untappable; this one is always on screen.
+        Button(
+            onClick = onOpenUploader,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp, horizontal = 16.dp),
+        ) { Text("Uploader") }
     }
 }
