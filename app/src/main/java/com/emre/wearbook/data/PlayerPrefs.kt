@@ -1,0 +1,62 @@
+package com.emre.wearbook.data
+
+import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.first
+
+/**
+ * Single DataStore for all player state: per-book resume positions,
+ * playback speed, and the sleep-timer end timestamp (epoch ms).
+ *
+ * DataStore is a per-application singleton: the context's application
+ * must be used, so both Activity and Service share the same store.
+ */
+object PlayerPrefs {
+
+    private val Context.dataStore by preferencesDataStore(name = "player")
+
+    private fun posKey(bookId: String) = longPreferencesKey("pos:$bookId")
+    private val KEY_SPEED = floatPreferencesKey("speed")
+    private val KEY_SLEEP_END_MS = longPreferencesKey("sleepEndAtMs")
+    private val KEY_LAST_BOOK = stringPreferencesKey("lastBook")
+
+    suspend fun getPos(context: Context, bookId: String): Long =
+        context.dataStore.data.first()[posKey(bookId)] ?: 0L
+
+    suspend fun setPos(context: Context, bookId: String, posMs: Long) {
+        context.dataStore.edit { it[posKey(bookId)] = posMs }
+    }
+
+    suspend fun deletePos(context: Context, bookId: String) {
+        context.dataStore.edit { it.remove(posKey(bookId)) }
+    }
+
+    suspend fun getSpeed(context: Context): Float =
+        context.dataStore.data.first()[KEY_SPEED] ?: 1.0f
+
+    suspend fun setSpeed(context: Context, speed: Float) {
+        context.dataStore.edit { it[KEY_SPEED] = speed }
+    }
+
+    suspend fun getSleepEndMs(context: Context): Long? =
+        context.dataStore.data.first()[KEY_SLEEP_END_MS]
+
+    suspend fun setSleepEndMs(context: Context, endMs: Long?) {
+        context.dataStore.edit {
+            if (endMs == null) it.remove(KEY_SLEEP_END_MS)
+            else it[KEY_SLEEP_END_MS] = endMs
+        }
+    }
+
+    suspend fun getLastBook(context: Context): String? =
+        context.dataStore.data.first()[KEY_LAST_BOOK]
+
+    suspend fun setLastBook(context: Context, bookId: String) {
+        context.dataStore.edit { it[KEY_LAST_BOOK] = bookId }
+    }
+}
