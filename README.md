@@ -57,6 +57,10 @@ Ktor 3.3.3 (CIO), DataStore 1.2.1. minSdk 30 / targetSdk 37.
 Known quirk: Media3's MP4 chapter extraction does not fire on Wear OS 7, so
 chapters are parsed by `books/Mp4ChapterParser.kt` directly from the file.
 
+## Next
+
+See [ROADMAP.md](ROADMAP.md) for known gaps and planned improvements.
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).
