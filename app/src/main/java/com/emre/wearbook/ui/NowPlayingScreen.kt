@@ -1,13 +1,16 @@
 package com.emre.wearbook.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -15,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -24,10 +29,14 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
 import com.emre.wearbook.R
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import com.emre.wearbook.playback.PlaybackState
 import com.emre.wearbook.playback.PlaybackUi
 import com.emre.wearbook.playback.chapterIndexAt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private val SPEED_OPTIONS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 private val SLEEP_OPTIONS = listOf(15, 30, 60, 120)
@@ -43,6 +52,29 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
     val sleepEndMs by PlaybackState.sleepEndMs.collectAsState()
     val sleepArmed by PlaybackState.sleepMinutes.collectAsState()
     val error by PlaybackState.playbackError.collectAsState()
+    val artworkBytes by PlaybackState.artwork.collectAsState()
+    var cover by remember { mutableStateOf<ImageBitmap?>(null) }
+
+    // Decode the cover off the main thread, downscaled; the source art can be
+    // a full-size picture and this is a ~2-inch round screen.
+    LaunchedEffect(artworkBytes) {
+        cover = artworkBytes?.let { bytes ->
+            withContext(Dispatchers.Default) {
+                val art = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+                val target = 256
+                val scaled = if (art.width > target || art.height > target) {
+                    val scale = target.toFloat() / maxOf(art.width, art.height)
+                    Bitmap.createScaledBitmap(
+                        art,
+                        (art.width * scale).toInt().coerceAtLeast(1),
+                        (art.height * scale).toInt().coerceAtLeast(1),
+                        true,
+                    )
+                } else art
+                scaled.asImageBitmap()
+            }
+        }
+    }
 
     // Tick once a minute so the sleep countdown stays fresh.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -65,6 +97,15 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
     ) {
         // R33: current chapter title when known, else the plain header.
         val chapterTitle = chapters.getOrNull(chapterIndex)?.title
+        cover?.let {
+            Image(
+                bitmap = it,
+                contentDescription = "Book cover",
+                modifier = Modifier
+                    .size(88.dp)
+                    .padding(bottom = 4.dp),
+            )
+        }
         Text(
             text = chapterTitle ?: (nowPlaying?.title ?: ""),
             maxLines = 2,

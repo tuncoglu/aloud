@@ -23,6 +23,8 @@ object PlaybackState {
     val sleepMinutes = MutableStateFlow<Int?>(null)
     /** Last playback error to show on the now-playing screen; null = fine. */
     val playbackError = MutableStateFlow<String?>(null)
+    /** Extracted cover art (ID3 APIC / M4B covr) of the current book. */
+    val artwork = MutableStateFlow<ByteArray?>(null)
 }
 
 /**

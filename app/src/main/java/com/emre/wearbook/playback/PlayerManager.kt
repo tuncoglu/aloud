@@ -212,6 +212,15 @@ class PlayerManager(private val context: Context) {
                 // discontinuity — read the position here, on the main thread.
                 PlaybackState.positionMs.value = player.currentPosition
                 PlaybackState.chapters.value = emptyList()
+                PlaybackState.artwork.value = mediaItem?.mediaMetadata?.artworkData
+            }
+
+            // Artwork often arrives only after extraction, in a later
+            // media-metadata update; surface it whenever it changes.
+            override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                if (mediaMetadata.artworkData != null) {
+                    PlaybackState.artwork.value = mediaMetadata.artworkData
+                }
             }
 
             @UnstableApi
