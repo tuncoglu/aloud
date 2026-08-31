@@ -1,6 +1,8 @@
 package com.emre.wearbook.playback
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
+import androidx.annotation.OptIn
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -51,6 +53,12 @@ fun List<ChapterUi>.chapterIndexAt(positionMs: Long): Int =
 /**
  * Single instance shared by the Activity and PlaybackService (same process).
  * Owns the ExoPlayer + MediaSession and exposes UI state as StateFlows.
+ *
+ * Note the import: this is androidx.annotation.OptIn, not Kotlin's. Media3's
+ * marker is enforced by androidx.annotation.experimental, which kotlin.OptIn
+ * does not satisfy — it silently had no effect and left 19 lint errors
+ * standing. Annotating the class @UnstableApi instead would only push the
+ * requirement onto every caller.
  */
 @OptIn(UnstableApi::class)
 class PlayerManager private constructor(private val context: Context) {
@@ -369,6 +377,10 @@ class PlayerManager private constructor(private val context: Context) {
     }
 
     companion object {
+        // Holds the application context only, so this is not an activity leak.
+        // The singleton itself goes away with REMEDIATION.md R20, when the UI
+        // starts driving playback through MediaController instead.
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: PlayerManager? = null
 

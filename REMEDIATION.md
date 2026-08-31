@@ -31,38 +31,47 @@ in the commit rather than claiming it works.
 Lint currently *fails*, so it cannot gate anything and real problems hide behind
 the noise. Everything here is mechanical.
 
-- ⬜ **R1 — Fix the Media3 opt-in annotation.** All 19 lint errors are one root
+- ✅ **R1 — Fix the Media3 opt-in annotation.** All 19 lint errors are one root
   cause: `@OptIn(UnstableApi::class)` on `PlayerManager` does nothing (Media3's
   marker is enforced by `androidx.annotation.experimental`, not Kotlin opt-in) —
   the compiler already says so. Annotate the class with
   `@androidx.media3.common.util.UnstableApi` instead.
   *Verify:* lint errors 19 → 0, and the only compiler warning disappears.
-- ⬜ **R2 — `android:allowBackup="false"`** (or data-extraction rules excluding
+- ✅ **R2 — `android:allowBackup="false"`** (or data-extraction rules excluding
   `files/books`): the default is `true` with gigabytes of audiobooks in
   `filesDir`.
-- ⬜ **R3 — `android:taskAffinity=""` on `MainActivity`** so the app appears
+- ✅ **R3 — `android:taskAffinity=""` on `MainActivity`** so the app appears
   correctly in Wear recents (lint `WearRecents`).
-- ⬜ **R4 — Add a `<monochrome>` layer** to `ic_launcher.xml` (themed icons).
-- ⬜ **R5 — Merge `res/mipmap-anydpi-v26` into `res/mipmap-anydpi`** — the `-v26`
+- ✅ **R4 — Add a `<monochrome>` layer** to `ic_launcher.xml` (themed icons).
+- ✅ **R5 — Merge `res/mipmap-anydpi-v26` into `res/mipmap-anydpi`** — the `-v26`
   qualifier is dead weight at minSdk 30.
-- ⬜ **R6 — Document the exported `PlaybackService`** with a comment plus
+- ✅ **R6 — Document the exported `PlaybackService`** with a comment plus
   `tools:ignore="ExportedService"`: it is exported on purpose, because that is
   how `MediaSessionService` is discovered.
-- ⬜ **R7 — Suppress `StaticFieldLeak` on `PlayerManager.instance` with a
+- ✅ **R7 — Suppress `StaticFieldLeak` on `PlayerManager.instance` with a
   pointer to R20**, which removes the singleton for real.
-- ⬜ **R8 — `mutableLongStateOf`** for the sleep-countdown clock in
+- ✅ **R8 — `mutableLongStateOf`** for the sleep-countdown clock in
   `NowPlayingScreen` (lint `AutoboxingStateCreation`).
-- ⬜ **R9 — Free-space check:** lint suggests `StorageManager#getAllocatableBytes`
+- ✅ **R9 — Free-space check:** lint suggests `StorageManager#getAllocatableBytes`
   over `File.usableSpace` (it accounts for clearable cache). Either switch or
   suppress with a one-line rationale.
-- ⬜ **R10 — Version warnings:** Ktor 3.3.3 → 3.5.2 is real (defer if D1 drops
+- ✅ **R10 — Version warnings:** Ktor 3.3.3 → 3.5.2 is real (defer if D1 drops
   Ktor). The "newer Kotlin compose plugin" warning is a **false positive** —
   AGP 9.3.2's built-in Kotlin pins 2.2.10 — so suppress it with a comment.
 
 **Acceptance:** `./gradlew :app:lintDebug` exits 0 with **no baseline file**, and
 `assembleDebug` + tests stay green.
 
+✅ **Closed 2026-08-31: 0 errors, 3 warnings (all version-notes), 20 tests green,
+APK builds.** R1 is the *androidx* `OptIn`, not Kotlin's — `kotlin.OptIn` is
+inert against Media3's marker, and `@UnstableApi` on the class only moves the
+error onto every caller. `androidx.annotation.experimental` is now an explicit
+dependency. R2 needed `dataExtractionRules` + `fullBackupContent` as well, or
+lint flags the deprecated `allowBackup` on API 31+. The annotated
+`StaticFieldLeak` suppression (R7) carries the R20 pointer.
+
 ---
+
 
 ## Phase 1 — correctness the user can feel  ·  ~1 day  ·  device smoke at the end
 
@@ -136,6 +145,9 @@ work; resume position still survives a process kill.
 MediaController binding to promote the FGS. This is the change most likely to
 regress it — do it on its own branch and keep the working commit reachable.
 
+**Decided 2026-08-31:** accepted — proceed with the refactor and triage any
+regression as it appears, rather than designing around it.
+
 ---
 
 ## Phase 3 — a real release build  ·  ~1 day  ·  starts with a decision
@@ -150,6 +162,9 @@ regress it — do it on its own branch and keep the working commit reachable.
 > **Recommendation:** timebox R8-with-Ktor to ~2 h; if the release build misbehaves,
 > replace the server with ~150 lines over `ServerSocket`, which deletes the
 > dependency, the natives and the keep rules at once.
+>
+> **Decided 2026-08-31:** the recommendation stands — try R8-with-Ktor first
+> (timeboxed), fall back to the `ServerSocket` implementation.
 
 - ⬜ **R23 — `buildTypes { release { ... } }`** with `isMinifyEnabled`,
   `isShrinkResources`, and a signing config whose keystore path/passwords come

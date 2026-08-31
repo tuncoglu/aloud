@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,7 +40,7 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
     val error by manager.playbackError.collectAsState()
 
     // Tick once a minute so the sleep countdown stays fresh.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(sleepEndMs) {
         while (sleepEndMs != null) {
             delay(30_000)

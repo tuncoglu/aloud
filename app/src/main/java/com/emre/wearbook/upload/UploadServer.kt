@@ -1,6 +1,7 @@
 package com.emre.wearbook.upload
 
 import android.content.Context
+import android.os.storage.StorageManager
 import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.data.PlayerPrefs
 import io.ktor.http.ContentType
@@ -108,7 +109,7 @@ class UploadServer(
                 if (total in 1..offset) {
                     return@post fail("offset past total", HttpStatusCode.BadRequest)
                 }
-                if (offset == 0L && total > 0 && dir.usableSpace < total + FREE_SPACE_MARGIN) {
+                if (offset == 0L && total > 0 && freeBytes(dir) < total + FREE_SPACE_MARGIN) {
                     return@post fail("not enough free space", HttpStatusCode.InsufficientStorage)
                 }
 
@@ -214,6 +215,18 @@ class UploadServer(
 
     private suspend fun RoutingContext.fail(message: String, status: HttpStatusCode) {
         call.respondText("{\"error\":\"$message\"}", ContentType.Application.Json, status)
+    }
+
+    /**
+     * Space actually obtainable for a new book: getAllocatableBytes counts the
+     * cached data the system would evict for us, so a book that would really
+     * fit is not refused. usableSpace is the fallback.
+     */
+    private fun freeBytes(dir: File): Long = try {
+        val sm = context.getSystemService(StorageManager::class.java)
+        sm.getAllocatableBytes(sm.getUuidForPath(dir))
+    } catch (_: Exception) {
+        dir.usableSpace
     }
 
     private fun constantTimeEquals(a: String, b: String): Boolean {
