@@ -15,11 +15,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
+import com.emre.wearbook.R
 import com.emre.wearbook.playback.PlaybackState
 import com.emre.wearbook.playback.PlaybackUi
 import com.emre.wearbook.playback.chapterIndexAt
@@ -59,8 +63,10 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        // R33: current chapter title when known, else the plain header.
+        val chapterTitle = chapters.getOrNull(chapterIndex)?.title
         Text(
-            text = nowPlaying?.title ?: "",
+            text = chapterTitle ?: (nowPlaying?.title ?: ""),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -81,6 +87,9 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
             )
         }
 
+        val prevDesc = stringResource(R.string.action_previous_chapter)
+        val nextDesc = stringResource(R.string.action_next_chapter)
+        val playDesc = stringResource(if (isPlaying) R.string.action_pause else R.string.action_play)
         Row(
             modifier = Modifier.padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -92,16 +101,19 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
                     else ui.skipRelative(-30_000)
                 },
                 enabled = if (chapters.isNotEmpty()) chapterIndex > 0 else durationMs > 0,
+                modifier = Modifier.semantics { contentDescription = prevDesc },
             ) { Text("⏮") }
-            Button(onClick = { ui.togglePlayPause() }) {
-                Text(if (isPlaying) "⏸" else "▶")
-            }
+            Button(
+                onClick = { ui.togglePlayPause() },
+                modifier = Modifier.semantics { contentDescription = playDesc },
+            ) { Text(if (isPlaying) "⏸" else "▶") }
             Button(
                 onClick = {
                     if (chapters.isNotEmpty()) ui.skipToChapter(chapterIndex + 1)
                     else ui.skipRelative(30_000)
                 },
                 enabled = if (chapters.isNotEmpty()) chapterIndex < chapters.size - 1 else durationMs > 0,
+                modifier = Modifier.semantics { contentDescription = nextDesc },
             ) { Text("⏭") }
         }
 
@@ -109,7 +121,7 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
             onClick = onOpenChapters,
             modifier = Modifier.padding(top = 8.dp),
             enabled = chapters.isNotEmpty(),
-        ) { Text("Chapters") }
+        ) { Text(stringResource(R.string.action_open_chapters)) }
 
         Row(
             modifier = Modifier.padding(top = 8.dp),
@@ -129,7 +141,7 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
                     else -> SLEEP_OPTIONS[idx + 1]
                 }
                 ui.setSleepTimer(next)
-            }) { Text(if (sleepEndMs != null) "Zzz ${sleepRemainingMin}m" else "Sleep") }
+            }) { Text(if (sleepEndMs != null) "Zzz ${sleepRemainingMin}m" else stringResource(R.string.action_sleep_off)) }
         }
     }
 }

@@ -1,4 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">WearBite</string>
+    <string name="library_header">My audiobooks</string>
+    <string name="library_empty">No books yet</string>
+    <string name="library_uploader">Uploader</string>
+    <string name="library_delete_title">Delete book?</string>
+    <string name="library_delete_message">Removes %1$s from the watch. Saved position is gone too.</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="chapters_header">Chapters</string>
+    <string name="chapters_empty">No chapter metadata</string>
+    <string name="action_previous_chapter">Previous chapter</string>
+    <string name="action_next_chapter">Next chapter</string>
+    <string name="action_rewind">Rewind 30 seconds</string>
+    <string name="action_forward">Forward 30 seconds</string>
+    <string name="action_play">Play</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_open_chapters">Chapters</string>
+    <string name="action_sleep_off">Sleep</string>
+    <string name="uploader_on">Uploader on</string>
+    <string name="uploader_off">Uploader off</string>
 </resources>

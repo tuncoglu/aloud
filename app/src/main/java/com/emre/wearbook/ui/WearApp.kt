@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -18,9 +19,11 @@ import androidx.media3.session.MediaController
 import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.data.PlayerPrefs
 import com.emre.wearbook.playback.ControllerPlaybackUi
+import com.emre.wearbook.playback.PlaybackState
 import com.emre.wearbook.playback.PlaybackUi
 import com.emre.wearbook.upload.UploadServerService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private sealed interface Screen {
@@ -92,14 +95,26 @@ fun WearApp(
 
     val uiOr: PlaybackUi = ui ?: return
     when (screen) {
-        Screen.Library -> LibraryScreen(
-            onPlay = {
-                requestNotificationPermission()
-                uiOr.playBook(it)
-                screen = Screen.NowPlaying
-            },
-            onOpenUploader = { screen = Screen.Uploader },
-        )
+        Screen.Library -> {
+            val scope = rememberCoroutineScope()
+            LibraryScreen(
+                onPlay = {
+                    requestNotificationPermission()
+                    uiOr.playBook(it)
+                    screen = Screen.NowPlaying
+                },
+                onOpenUploader = { screen = Screen.Uploader },
+                onDelete = { book ->
+                    scope.launch {
+                        // Stop playback if the deleted book is the one playing,
+                        // then drop the file and its saved position.
+                        if (PlaybackState.nowPlaying.value?.id == book.id) uiOr.stop()
+                        book.file.delete()
+                        PlayerPrefs.deletePos(context, book.id)
+                    }
+                },
+            )
+        }
         Screen.NowPlaying -> {
             BackHandler { screen = Screen.Library }
             NowPlayingScreen(uiOr, onOpenChapters = { screen = Screen.Chapters })
