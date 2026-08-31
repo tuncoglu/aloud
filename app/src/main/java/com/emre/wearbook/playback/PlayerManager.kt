@@ -112,6 +112,21 @@ class PlayerManager(private val context: Context) {
             ),
         )
         .setCallback(@OptIn(UnstableApi::class) object : MediaSession.Callback {
+            // Custom commands are refused unless advertised on connect; without
+            // this the UI's play_book/sleep commands failed silently.
+            override fun onConnect(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+            ): MediaSession.ConnectionResult = MediaSession.ConnectionResult.accept(
+                MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                    .add(SessionCommand(PlaybackCommand.PLAY_BOOK, Bundle()))
+                    .add(SessionCommand(PlaybackCommand.SET_SLEEP, Bundle()))
+                    .build(),
+                // DEFAULT covers play/pause/seek/speed; 1.11's Player.Commands
+                // only exposes EMPTY at compile time.
+                MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS,
+            )
+
             override fun onCustomCommand(
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo,
@@ -192,6 +207,10 @@ class PlayerManager(private val context: Context) {
                 }
                 PlaybackState.durationMs.value =
                     mediaItem?.let { player.duration.takeIf { d -> d > 0 } ?: 0L } ?: 0L
+                // A book prepared while paused never gets a ticker ("0:00" on a
+                // resumed position) and preview transitions don't fire a
+                // discontinuity — read the position here, on the main thread.
+                PlaybackState.positionMs.value = player.currentPosition
                 PlaybackState.chapters.value = emptyList()
             }
 
