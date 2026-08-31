@@ -49,7 +49,7 @@ class UploadServerService : Service() {
         startForeground(1, notification)
         // The idle auto-stop tears the whole service down, so the notification
         // and the "Uploader on" UI can never outlive the running server.
-        server = UploadServer(this, newPin, onAutoStop = { stopSelf() })
+        server = UploadServer(AndroidUploadStore(this), newPin, onAutoStop = { stopSelf() })
         server?.start(PORT)
         pin.value = newPin
         running.value = true

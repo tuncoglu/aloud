@@ -28,6 +28,8 @@ androidx-annotation-experimental = { module = "androidx.annotation:annotation-ex
 # Pinned explicitly: Media3/Compose pull 1.10.2 transitively; 1.11.0 is the
 # current stable and binary-compatible.
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+# Ktor's testApplication for the uploader endpoint tests (JVM only).
+ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -2,6 +2,7 @@ package com.emre.wearbook.upload
 
 import android.content.Context
 import android.os.storage.StorageManager
+import com.emre.wearbook.books.Book
 import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.data.PlayerPrefs
 import io.ktor.http.ContentType
@@ -34,6 +35,51 @@ import java.net.NetworkInterface
 import java.security.SecureRandom
 
 /**
+ * The parts of the uploader that touch Android, behind an interface so the
+ * routing (and its tests) can run on the JVM without a Context.
+ */
+// The route module is top-level, so its constants live at file scope.
+private val lockoutScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private const val MAX_CHUNK_BYTES = 4L * 1024 * 1024
+private const val FREE_SPACE_MARGIN = 32L * 1024 * 1024
+private const val IDLE_TIMEOUT_MS = 2 * 60_000L
+private const val MAX_BAD_PINS = 20
+private const val MAX_NAME_LENGTH = 180
+
+interface UploadStore {
+    val dir: File
+    fun list(): List<Book>
+    suspend fun deletePosition(name: String)
+    fun freeBytes(): Long
+}
+
+/** Production store: the watch's private books directory, DataStore positions.
+ *  The parameter is named appContext — "context" collides with a Ktor function
+ *  of that name in modules that also import the Ktor application API. */
+class AndroidUploadStore(private val appContext: Context) : UploadStore {
+    override val dir: File get() = BooksRepository.booksDir(appContext)
+    override fun list(): List<Book> = BooksRepository.list(appContext)
+    override suspend fun deletePosition(name: String) = PlayerPrefs.deletePos(appContext, name)
+
+    /** Space actually obtainable: getAllocatableBytes counts the cached data the
+     *  system would evict for us, so a book that would really fit is not refused.
+     *  usableSpace is the fallback. */
+    override fun freeBytes(): Long = try {
+        val sm = appContext.getSystemService(StorageManager::class.java)
+        sm.getAllocatableBytes(sm.getUuidForPath(dir))
+    } catch (_: Exception) {
+        dir.usableSpace
+    }
+}
+
+/** Shared mutable state of one upload server run (moved out of the routing so
+ *  tests can drive the routes directly). */
+internal class UploadState {
+    @Volatile var lastActivityMs = System.currentTimeMillis()
+    @Volatile var badPins = 0
+}
+
+/**
  * Tiny embedded HTTP uploader: PC browser -> http://<watch-ip>:8080.
  *
  * Every mutating endpoint requires the 6-digit [pin] shown on the watch, so a
@@ -51,22 +97,23 @@ import java.security.SecureRandom
  *   DELETE /part?name=&pin=                -> drop a partial upload only
  */
 class UploadServer(
-    private val context: Context,
+    private val store: UploadStore,
     private val pin: String,
     private val onAutoStop: () -> Unit = {},
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val state = UploadState()
     private var server: EmbeddedServer<*, *>? = null
     private var autoStopJob: Job? = null
-    @Volatile private var lastActivityMs = System.currentTimeMillis()
-    @Volatile private var badPins = 0
 
     val isRunning: Boolean get() = server != null
 
     fun start(port: Int) {
         if (server != null) return
-        server = embeddedServer(CIO, port = port, host = "0.0.0.0") { module() }.start(wait = false)
+        server = embeddedServer(CIO, port = port, host = "0.0.0.0") {
+            uploadRoutes(store, state, pin, onAutoStop)
+        }.start(wait = false)
         startAutoStop()
     }
 
@@ -77,187 +124,12 @@ class UploadServer(
         server = null
     }
 
-    private fun Application.module() {
-        routing {
-            get("/") {
-                call.respondText(UPLOADER_HTML, ContentType.Text.Html)
-            }
-
-            post("/book") {
-                if (!authorize()) return@post
-                val name = sanitizeName(call.request.queryParameters["name"])
-                    ?: return@post fail("bad name", HttpStatusCode.BadRequest)
-                val offset = call.request.queryParameters["offset"]?.toLongOrNull() ?: 0L
-                val total = call.request.queryParameters["total"]?.toLongOrNull() ?: -1L
-
-                // A chunk is bounded: the body streams to disk instead of being
-                // buffered whole, and an oversized one is refused before it can
-                // exhaust a watch's RAM.
-                val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-                if (declared != null && declared > MAX_CHUNK_BYTES) {
-                    return@post fail("chunk too large", HttpStatusCode.PayloadTooLarge)
-                }
-
-                val dir = BooksRepository.booksDir(context)
-                val part = File(dir, "$name${BooksRepository.PART_SUFFIX}")
-                // Writes may only land inside what has already been received (an
-                // append, or a re-send of an earlier chunk) — never at an
-                // arbitrary caller-chosen file position.
-                if (offset < 0 || offset > part.length()) {
-                    return@post fail("bad offset", HttpStatusCode.BadRequest)
-                }
-                if (total in 1..offset) {
-                    return@post fail("offset past total", HttpStatusCode.BadRequest)
-                }
-                if (offset == 0L && total > 0 && freeBytes(dir) < total + FREE_SPACE_MARGIN) {
-                    return@post fail("not enough free space", HttpStatusCode.InsufficientStorage)
-                }
-
-                val written = withContext(Dispatchers.IO) {
-                    RandomAccessFile(part, "rw").use { raf ->
-                        raf.seek(offset)
-                        val buf = ByteArray(64 * 1024)
-                        var n = 0L
-                        call.receiveStream().use { input ->
-                            while (true) {
-                                val read = input.read(buf)
-                                if (read <= 0) break
-                                if (n + read > MAX_CHUNK_BYTES) return@use -1L
-                                raf.write(buf, 0, read)
-                                n += read
-                            }
-                        }
-                        n
-                    }
-                }
-                if (written < 0) return@post fail("chunk too large", HttpStatusCode.PayloadTooLarge)
-
-                lastActivityMs = System.currentTimeMillis()
-                val received = offset + written
-                if (total > 0 && received >= total && written > 0) {
-                    // An abandoned .part left over from a longer previous
-                    // upload would otherwise survive as trailing garbage.
-                    if (part.length() > total) {
-                        withContext(Dispatchers.IO) {
-                            RandomAccessFile(part, "rw").use { it.setLength(total) }
-                        }
-                    }
-                    val final = File(dir, name)
-                    if (!part.renameTo(final)) {
-                        return@post fail("rename failed", HttpStatusCode.InternalServerError)
-                    }
-                    call.respondText(
-                        "{\"ok\":true,\"received\":$received,\"complete\":true}",
-                        ContentType.Application.Json,
-                    )
-                } else {
-                    call.respondText(
-                        "{\"ok\":true,\"received\":$received}",
-                        ContentType.Application.Json,
-                    )
-                }
-            }
-
-            get("/books") {
-                if (!authorize()) return@get
-                val json = BooksRepository.list(context).joinToString(prefix = "[", postfix = "]") { b ->
-                    "{\"name\":\"${b.id}\",\"size\":${b.file.length()},\"modified\":${b.file.lastModified()}}"
-                }
-                call.respondText(json, ContentType.Application.Json)
-            }
-
-            delete("/book") {
-                if (!authorize()) return@delete
-                val name = sanitizeName(call.request.queryParameters["name"])
-                    ?: return@delete fail("bad name", HttpStatusCode.BadRequest)
-                File(BooksRepository.booksDir(context), name).delete()
-                File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}").delete()
-                PlayerPrefs.deletePos(context, name)
-                lastActivityMs = System.currentTimeMillis()
-                call.respondText("{\"ok\":true}", ContentType.Application.Json)
-            }
-
-            // Cleanup path for an aborted upload: drops the .part only, so a
-            // failed transfer leaves no dead weight and never touches a good book.
-            delete("/part") {
-                if (!authorize()) return@delete
-                val name = sanitizeName(call.request.queryParameters["name"])
-                    ?: return@delete fail("bad name", HttpStatusCode.BadRequest)
-                File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}").delete()
-                lastActivityMs = System.currentTimeMillis()
-                call.respondText("{\"ok\":true}", ContentType.Application.Json)
-            }
-        }
-    }
-
-    /**
-     * Rejects the call unless the PIN matches. A wrong PIN deliberately does NOT
-     * count as activity, so a brute-forcer cannot hold the 2-minute idle stop
-     * open; [MAX_BAD_PINS] wrong guesses shut the server down outright.
-     */
-    private suspend fun RoutingContext.authorize(): Boolean {
-        if (constantTimeEquals(call.request.queryParameters["pin"].orEmpty(), pin)) return true
-        badPins++
-        call.respondText(
-            "{\"error\":\"bad pin\"}",
-            ContentType.Application.Json,
-            HttpStatusCode.Unauthorized,
-        )
-        if (badPins >= MAX_BAD_PINS) {
-            scope.launch {
-                delay(250) // let the 401 flush before the engine goes down
-                stop()
-                onAutoStop()
-            }
-        }
-        return false
-    }
-
-    private suspend fun RoutingContext.fail(message: String, status: HttpStatusCode) {
-        call.respondText("{\"error\":\"$message\"}", ContentType.Application.Json, status)
-    }
-
-    /**
-     * Space actually obtainable for a new book: getAllocatableBytes counts the
-     * cached data the system would evict for us, so a book that would really
-     * fit is not refused. usableSpace is the fallback.
-     */
-    private fun freeBytes(dir: File): Long = try {
-        val sm = context.getSystemService(StorageManager::class.java)
-        sm.getAllocatableBytes(sm.getUuidForPath(dir))
-    } catch (_: Exception) {
-        dir.usableSpace
-    }
-
-    private fun constantTimeEquals(a: String, b: String): Boolean {
-        if (b.isEmpty()) return false
-        var diff = a.length xor b.length
-        for (i in a.indices) diff = diff or (a[i].code xor b[i % b.length].code)
-        return diff == 0
-    }
-
-    /**
-     * Names are *rejected*, not stripped: silently deleting characters turned
-     * "Björn.m4b" into "Bjrn.m4b" and could collide two books onto one file.
-     * Separators, dot-segments, control chars and quotes (the JSON above is
-     * hand-rolled) are the only things that must not get through.
-     */
-    private fun sanitizeName(raw: String?): String? {
-        val name = raw?.trim().orEmpty()
-        if (name.isEmpty() || name.length > MAX_NAME_LENGTH) return null
-        if (name.startsWith(".") || name.contains("..")) return null
-        if (name.any { it == '/' || it == '\\' || it == '"' || it.code < 0x20 || it.code == 0x7F }) return null
-        if (name.endsWith(BooksRepository.PART_SUFFIX)) return null
-        if (name.substringBeforeLast('.', "").isBlank()) return null
-        return if (BooksRepository.isSupportedName(name)) name else null
-    }
-
     private fun startAutoStop() {
         autoStopJob?.cancel()
         autoStopJob = scope.launch {
             while (isActive) {
                 delay(10_000)
-                if (System.currentTimeMillis() - lastActivityMs > IDLE_TIMEOUT_MS) {
+                if (System.currentTimeMillis() - state.lastActivityMs > IDLE_TIMEOUT_MS) {
                     // Stop the *service* too: stopping only the engine left the
                     // notification up and the UI claiming "Uploader on".
                     server?.stop(0, 0)
@@ -272,11 +144,6 @@ class UploadServer(
 
     companion object {
         const val PIN_LENGTH = 6
-        private const val MAX_CHUNK_BYTES = 4L * 1024 * 1024
-        private const val FREE_SPACE_MARGIN = 32L * 1024 * 1024
-        private const val IDLE_TIMEOUT_MS = 2 * 60_000L
-        private const val MAX_BAD_PINS = 20
-        private const val MAX_NAME_LENGTH = 180
 
         /** Fresh PIN per server start; shown on the watch, never served over HTTP. */
         fun newPin(): String =
@@ -293,6 +160,179 @@ class UploadServer(
             null
         }
     }
+}
+
+/** The routes, as a standalone module so the tests can mount them with a fake
+ *  [UploadStore] through testApplication. */
+internal fun Application.uploadRoutes(
+    store: UploadStore,
+    state: UploadState,
+    pin: String,
+    onAutoStop: () -> Unit,
+) {
+    routing {
+        get("/") {
+            call.respondText(UPLOADER_HTML, ContentType.Text.Html)
+        }
+
+        post("/book") {
+            if (!authorize(state, pin, onAutoStop)) return@post
+            val name = sanitizeName(call.request.queryParameters["name"])
+                ?: return@post fail("bad name", HttpStatusCode.BadRequest)
+            val offset = call.request.queryParameters["offset"]?.toLongOrNull() ?: 0L
+            val total = call.request.queryParameters["total"]?.toLongOrNull() ?: -1L
+
+            // A chunk is bounded: the body streams to disk instead of being
+            // buffered whole, and an oversized one is refused before it can
+            // exhaust a watch's RAM.
+            val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+            if (declared != null && declared > MAX_CHUNK_BYTES) {
+                return@post fail("chunk too large", HttpStatusCode.PayloadTooLarge)
+            }
+
+            val part = File(store.dir, "$name${BooksRepository.PART_SUFFIX}")
+            // Writes may only land inside what has already been received (an
+            // append, or a re-send of an earlier chunk) — never at an
+            // arbitrary caller-chosen file position.
+            if (offset < 0 || offset > part.length()) {
+                return@post fail("bad offset", HttpStatusCode.BadRequest)
+            }
+            if (total in 1..offset) {
+                return@post fail("offset past total", HttpStatusCode.BadRequest)
+            }
+            if (offset == 0L && total > 0 && store.freeBytes() < total + FREE_SPACE_MARGIN) {
+                return@post fail("not enough free space", HttpStatusCode.InsufficientStorage)
+            }
+
+            val written = withContext(Dispatchers.IO) {
+                RandomAccessFile(part, "rw").use { raf ->
+                    raf.seek(offset)
+                    val buf = ByteArray(64 * 1024)
+                    var n = 0L
+                    call.receiveStream().use { input ->
+                        while (true) {
+                            val read = input.read(buf)
+                            if (read <= 0) break
+                            if (n + read > MAX_CHUNK_BYTES) return@use -1L
+                            raf.write(buf, 0, read)
+                            n += read
+                        }
+                    }
+                    n
+                }
+            }
+            if (written < 0) return@post fail("chunk too large", HttpStatusCode.PayloadTooLarge)
+
+            state.lastActivityMs = System.currentTimeMillis()
+            val received = offset + written
+            if (total > 0 && received >= total && written > 0) {
+                // An abandoned .part left over from a longer previous
+                // upload would otherwise survive as trailing garbage.
+                if (part.length() > total) {
+                    withContext(Dispatchers.IO) {
+                        RandomAccessFile(part, "rw").use { it.setLength(total) }
+                    }
+                }
+                val final = File(store.dir, name)
+                if (!part.renameTo(final)) {
+                    return@post fail("rename failed", HttpStatusCode.InternalServerError)
+                }
+                call.respondText(
+                    "{\"ok\":true,\"received\":$received,\"complete\":true}",
+                    ContentType.Application.Json,
+                )
+            } else {
+                call.respondText(
+                    "{\"ok\":true,\"received\":$received}",
+                    ContentType.Application.Json,
+                )
+            }
+        }
+
+        get("/books") {
+            if (!authorize(state, pin, onAutoStop)) return@get
+            val json = store.list().joinToString(prefix = "[", postfix = "]") { b ->
+                "{\"name\":\"${b.id}\",\"size\":${b.file.length()},\"modified\":${b.file.lastModified()}}"
+            }
+            call.respondText(json, ContentType.Application.Json)
+        }
+
+        delete("/book") {
+            if (!authorize(state, pin, onAutoStop)) return@delete
+            val name = sanitizeName(call.request.queryParameters["name"])
+                ?: return@delete fail("bad name", HttpStatusCode.BadRequest)
+            File(store.dir, name).delete()
+            File(store.dir, "$name${BooksRepository.PART_SUFFIX}").delete()
+            store.deletePosition(name)
+            state.lastActivityMs = System.currentTimeMillis()
+            call.respondText("{\"ok\":true}", ContentType.Application.Json)
+        }
+
+        // Cleanup path for an aborted upload: drops the .part only, so a
+        // failed transfer leaves no dead weight and never touches a good book.
+        delete("/part") {
+            if (!authorize(state, pin, onAutoStop)) return@delete
+            val name = sanitizeName(call.request.queryParameters["name"])
+                ?: return@delete fail("bad name", HttpStatusCode.BadRequest)
+            File(store.dir, "$name${BooksRepository.PART_SUFFIX}").delete()
+            state.lastActivityMs = System.currentTimeMillis()
+            call.respondText("{\"ok\":true}", ContentType.Application.Json)
+        }
+    }
+}
+
+/**
+ * Rejects the call unless the PIN matches. A wrong PIN deliberately does NOT
+ * count as activity, so a brute-forcer cannot hold the 2-minute idle stop
+ * open; [MAX_BAD_PINS] wrong guesses shut the server down outright.
+ */
+private suspend fun RoutingContext.authorize(
+    state: UploadState,
+    pin: String,
+    onAutoStop: () -> Unit,
+): Boolean {
+    if (constantTimeEquals(call.request.queryParameters["pin"].orEmpty(), pin)) return true
+    state.badPins++
+    call.respondText(
+        "{\"error\":\"bad pin\"}",
+        ContentType.Application.Json,
+        HttpStatusCode.Unauthorized,
+    )
+    if (state.badPins >= MAX_BAD_PINS) {
+        // let the 401 flush before the engine goes down
+        lockoutScope.launch {
+            delay(250)
+            onAutoStop()
+        }
+    }
+    return false
+}
+
+private suspend fun RoutingContext.fail(message: String, status: HttpStatusCode) {
+    call.respondText("{\"error\":\"$message\"}", ContentType.Application.Json, status)
+}
+
+private fun constantTimeEquals(a: String, b: String): Boolean {
+    if (b.isEmpty()) return false
+    var diff = a.length xor b.length
+    for (i in a.indices) diff = diff or (a[i].code xor b[i % b.length].code)
+    return diff == 0
+}
+
+/**
+ * Names are *rejected*, not stripped: silently deleting characters turned
+ * "Björn.m4b" into "Bjrn.m4b" and could collide two books onto one file.
+ * Separators, dot-segments, control chars and quotes (the JSON above is
+ * hand-rolled) are the only things that must not get through.
+ */
+private fun sanitizeName(raw: String?): String? {
+    val name = raw?.trim().orEmpty()
+    if (name.isEmpty() || name.length > MAX_NAME_LENGTH) return null
+    if (name.startsWith(".") || name.contains("..")) return null
+    if (name.any { it == '/' || it == '\\' || it == '"' || it.code < 0x20 || it.code == 0x7F }) return null
+    if (name.endsWith(BooksRepository.PART_SUFFIX)) return null
+    if (name.substringBeforeLast('.', "").isBlank()) return null
+    return if (BooksRepository.isSupportedName(name)) name else null
 }
 
 private val UPLOADER_HTML = """

@@ -35,11 +35,22 @@ class Mp4ChapterParserTest {
     }
 
     @Test
-    fun `nero chpl end times are unknown`() {
-        // Documents today's behaviour: chpl carries no end time, so it stays -1
-        // (deriving it from the next start is a tracked roadmap item).
-        val chapters = parse(Mp4Builder.neroFile(listOf(0L to "A", 1_000L to "B")))
-        assertTrue(chapters.all { it.endMs == -1L })
+    fun `nero chpl end times chain from the next chapter start`() {
+        val chapters = parse(Mp4Builder.neroFile(listOf(0L to "A", 1_000L to "B", 5_000L to "C")))
+        assertEquals(listOf(1_000L, 5_000L, -1L), chapters.map { it.endMs })
+    }
+
+    @Test
+    fun `a non-v1 chpl box is refused, not misparsed`() {
+        // Only the Nero v1 layout is understood; walking a v2 file as if it
+        // were v1 used to produce garbage chapter lists.
+        assertTrue(parse(Mp4Builder.neroFile(listOf(0L to "A"), chplVersion = 2)).isEmpty())
+    }
+
+    @Test
+    fun `a chpl box with set flags is refused`() {
+        val chapters = parse(Mp4Builder.neroFile(listOf(0L to "A"), nonZeroFlags = true))
+        assertTrue(chapters.isEmpty())
     }
 
     @Test
@@ -123,6 +134,13 @@ class Mp4ChapterParserTest {
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
         assertTrue(chapters.isEmpty())
         assertTrue("parse took ${elapsedMs}ms — the sample cap did not fire", elapsedMs < 2_000)
+    }
+
+    @Test
+    fun `quicktime titles with a UTF-16 BOM decode instead of mojibake`() {
+        val title = "The Middle — mid chapters"
+        val chapters = parse(Mp4Builder.quickTimeFile(starts, titles.map { t -> if (t == "The Middle") title else t }, utf16Titles = true))
+        assertEquals(listOf("Intro", title, "The End"), chapters.map { it.title })
     }
 
     @Test

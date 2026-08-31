@@ -126,7 +126,12 @@ class PlayerManager private constructor(private val context: Context) {
             player.setPlaybackSpeed(savedSpeed)
             val savedSleepEnd = PlayerPrefs.getSleepEndMs(context)?.takeIf { it > System.currentTimeMillis() }
             sleepEndMs.value = savedSleepEnd
-            if (savedSleepEnd != null) {
+            if (savedSleepEnd == null) {
+                // An expired timer used to be filtered here and then linger in
+                // DataStore for ever instead of being cleaned up.
+                PlayerPrefs.setSleepEndMs(context, null)
+                PlayerPrefs.setSleepMinutes(context, null)
+            } else {
                 // Re-arm after process/service restart; keep the armed option
                 // with the timer so the chip cycle stays correct mid-countdown.
                 sleepMinutes.value = PlayerPrefs.getSleepMinutes(context) ?: 15
@@ -168,7 +173,9 @@ class PlayerManager private constructor(private val context: Context) {
             override fun onMetadata(metadata: Metadata) {
                 // Sample-level metadata (ID3/EMSG). MP4 chapters don't come through
                 // here — they ride on the audio track Format, see onTracksChanged.
-                chapters.value = extractChapters(metadata)
+                // An empty result must not clobber a chapter list that
+                // Mp4ChapterParser already produced for this book.
+                extractChapters(metadata).takeIf { it.isNotEmpty() }?.let { chapters.value = it }
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -179,12 +186,26 @@ class PlayerManager private constructor(private val context: Context) {
                     TAG,
                     "onTracksChanged, audioFormat.metadata entries: ${fmtMetadata?.length() ?: 0}",
                 )
-                fmtMetadata?.let { chapters.value = extractChapters(it) }
+                fmtMetadata?.let {
+                    extractChapters(it).takeIf { c -> c.isNotEmpty() }?.let { c -> chapters.value = c }
+                }
             }
 
             override fun onEvents(player: Player, events: Player.Events) {
                 val dur = player.duration.takeIf { it > 0 }
                 if (dur != null && dur != durationMs.value) durationMs.value = dur
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                // The ticker only runs while playing, so a seek on a paused
+                // book used to leave the position text and the chapter
+                // highlight stale until playback resumed.
+                positionMs.value = newPosition.positionMs
+                savePositionNow()
             }
 
             override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
@@ -194,7 +215,12 @@ class PlayerManager private constructor(private val context: Context) {
     }
 
     /** Play a book, resuming from its persisted position. */
-    fun playBook(book: Book) {
+    fun playBook(book: Book) = applyBook(book, autoPlay = true)
+
+    /** Select the book (resuming its position) but stay paused. */
+    fun prepareBook(book: Book) = applyBook(book, autoPlay = false)
+
+    private fun applyBook(book: Book, autoPlay: Boolean) {
         // Flush the outgoing book's position while the player still refers to
         // it: setMediaItem below swaps both the media id and the position, and
         // a save that straddles the swap can file one book's position under the
@@ -203,7 +229,7 @@ class PlayerManager private constructor(private val context: Context) {
         playbackError.value = null
         scope.launch {
             val saved = PlayerPrefs.getPos(context, book.id)
-            Log.d(TAG, "playBook '${book.id}' resume at $saved ms")
+            Log.d(TAG, "applyBook '${book.id}' resume at $saved ms (play: $autoPlay)")
             val item = MediaItem.Builder()
                 .setMediaId(book.id)
                 .setUri(Uri.fromFile(book.file))
@@ -225,7 +251,7 @@ class PlayerManager private constructor(private val context: Context) {
                 Log.d(TAG, "book was finished, restarting from 0")
                 player.seekTo(0)
             }
-            player.play()
+            if (autoPlay) player.play()
             PlayerPrefs.setLastBook(context, book.id)
 
             // M4B chapters: parse directly from the file (Media3's MP4 path does
@@ -309,7 +335,9 @@ class PlayerManager private constructor(private val context: Context) {
             try {
                 while (isActive) {
                     positionMs.value = player.currentPosition
-                    if (++ticksSinceSave >= 5) {
+                    // Every 20 s, not every 5 s: this rewrites the whole
+                    // DataStore file, thousands of times per long book.
+                    if (++ticksSinceSave >= 20) {
                         ticksSinceSave = 0
                         savePositionNow()
                     }

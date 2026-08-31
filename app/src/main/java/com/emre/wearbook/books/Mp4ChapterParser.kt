@@ -80,6 +80,18 @@ object Mp4ChapterParser {
         return emptyList()
     }
 
+    /** QuickTime text samples are UTF-8, but some muxers write UTF-16 with a
+     *  BOM; those decode to mojibake if treated as UTF-8. */
+    private fun decodeChapterTitle(bytes: ByteArray): String {
+        if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
+            return String(bytes, 2, bytes.size - 2, StandardCharsets.UTF_16LE)
+        }
+        if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
+            return String(bytes, 2, bytes.size - 2, StandardCharsets.UTF_16BE)
+        }
+        return String(bytes, StandardCharsets.UTF_8)
+    }
+
     // --- box walking ---
 
     private class Box(val type: String, val start: Long, val payloadStart: Long, val end: Long)
@@ -132,19 +144,30 @@ object Mp4ChapterParser {
     private fun parseChpl(raf: RandomAccessFile, start: Long, end: Long): List<Chapter>? {
         raf.seek(start)
         val version = raf.read()
+        // Only the Nero v1 layout is understood; a v0/v2+ file must not be
+        // walked as if it were v1 — return null and let the QuickTime path try.
+        if (version != 1) return null
         val flags = raf.read() shl 16 or (raf.read() shl 8) or raf.read()
+        if (flags != 0) return null
         raf.read() // reserved byte
         val count = raf.readInt()
         if (count <= 0 || count > 10_000) return null
         val out = mutableListOf<Chapter>()
         for (i in 0 until count) {
+            if (raf.filePointer + 9 > end) return out // clamp: never read past the box
             val startMs = raf.readLong() / 10_000 // 100ns units
             val titleLen = raf.read()
             if (titleLen < 0) return out
+            if (raf.filePointer + titleLen > end) return out
             val bytes = ByteArray(titleLen)
             raf.readFully(bytes)
             val title = String(bytes, StandardCharsets.UTF_8)
             out += Chapter(startMs, -1, title)
+        }
+        // chpl has no end times of its own; chain them from the next start so a
+        // chapter-progress UI can use them (the last one waits for the duration).
+        for (i in 0 until out.size - 1) {
+            out[i] = out[i].copy(endMs = out[i + 1].startMs)
         }
         return out
     }
@@ -265,7 +288,7 @@ object Mp4ChapterParser {
                 val len = raf.readUnsignedShort()
                 val bytes = ByteArray(minOf(len, size - 2))
                 raf.readFully(bytes)
-                val title = String(bytes, StandardCharsets.UTF_8)
+                val title = decodeChapterTitle(bytes)
                 val endMs = if (sampleIdx + 1 < n) startTimesMs[sampleIdx + 1] else -1
                 out += Chapter(startTimesMs[sampleIdx], endMs, title)
                 pos += size

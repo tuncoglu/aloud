@@ -43,4 +43,5 @@ dependencies {
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)
     testImplementation(libs.junit)
+    testImplementation(libs.ktor.server.test.host)
 }

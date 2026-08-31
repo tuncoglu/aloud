@@ -38,10 +38,17 @@ object Mp4Builder {
     // --- Nero chpl ---------------------------------------------------------
 
     /** chpl payload: version+flags, one reserved byte, u32 count, then
-     *  (u64 start in 100ns units, u8 title length, UTF-8 title) per chapter. */
-    fun chpl(chapters: List<Pair<Long, String>>, declaredCount: Int = chapters.size): ByteArray {
+     *  (u64 start in 100ns units, u8 title length, title) per chapter. */
+    fun chpl(
+        chapters: List<Pair<Long, String>>,
+        declaredCount: Int = chapters.size,
+        chplVersion: Int = 1,
+        nonZeroFlags: Boolean = false,
+    ): ByteArray {
         val body = ByteArrayOutputStream()
-        body.write(fullBox(1))
+        body.write(fullBox(chplVersion).copyOf().apply {
+            if (nonZeroFlags) this[3] = 1
+        })
         body.write(0) // reserved
         body.write(i32(declaredCount))
         for ((startMs, title) in chapters) {
@@ -53,8 +60,13 @@ object Mp4Builder {
         return box("chpl", body.toByteArray())
     }
 
-    fun neroFile(chapters: List<Pair<Long, String>>, declaredCount: Int = chapters.size): ByteArray =
-        cat(FTYP, container("moov", container("udta", chpl(chapters, declaredCount))))
+    fun neroFile(
+        chapters: List<Pair<Long, String>>,
+        declaredCount: Int = chapters.size,
+        chplVersion: Int = 1,
+        nonZeroFlags: Boolean = false,
+    ): ByteArray =
+        cat(FTYP, container("moov", container("udta", chpl(chapters, declaredCount, chplVersion, nonZeroFlags))))
 
     /** Some muxers nest moov inside moov; the parser has to unwrap it. */
     fun nestedNeroFile(chapters: List<Pair<Long, String>>): ByteArray =
@@ -84,10 +96,16 @@ object Mp4Builder {
     private fun stco(offsets: List<Long>): ByteArray =
         box("stco", cat(fullBox(), i32(offsets.size), *offsets.map { i32(it.toInt()) }.toTypedArray()))
 
-    /** One chapter text sample: u16 length prefix + UTF-8 + optional trailer
+    /** One chapter text sample: u16 length prefix + title + optional trailer
      *  (real muxers append an 'encd' atom after the text). */
-    private fun sample(title: String, trailer: Int): ByteArray =
-        cat(u16(title.toByteArray(Charsets.UTF_8).size), title.toByteArray(Charsets.UTF_8), ByteArray(trailer))
+    private fun sample(title: String, trailer: Int, utf16: Boolean): ByteArray {
+        val payload = if (utf16) {
+            cat(byteArrayOf(0xFF.toByte(), 0xFE.toByte()), title.toByteArray(Charsets.UTF_16LE))
+        } else {
+            title.toByteArray(Charsets.UTF_8)
+        }
+        return cat(u16(payload.size), payload, ByteArray(trailer))
+    }
 
     /**
      * A file with an audio trak that points at a text trak via tref/chap.
@@ -102,8 +120,9 @@ object Mp4Builder {
         trailerBytes: Int = 0,
         sttsOverride: List<Pair<Int, Int>>? = null,
         uniformSampleSize: Boolean = false,
+        utf16Titles: Boolean = false,
     ): ByteArray {
-        val raw = titles.map { sample(it, trailerBytes) }
+        val raw = titles.map { sample(it, trailerBytes, utf16Titles) }
         // A fixed-size stsz has no size table at all, so every sample must be
         // padded to the same length.
         val width = raw.maxOf { it.size }
