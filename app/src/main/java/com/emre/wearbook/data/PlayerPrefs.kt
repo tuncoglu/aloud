@@ -22,6 +22,7 @@ object PlayerPrefs {
     private val Context.dataStore by preferencesDataStore(name = "player")
 
     private fun posKey(bookId: String) = longPreferencesKey("pos:$bookId")
+    private fun durKey(bookId: String) = longPreferencesKey("dur:$bookId")
     private val KEY_SPEED = floatPreferencesKey("speed")
     private val KEY_SLEEP_END_MS = longPreferencesKey("sleepEndAtMs")
     private val KEY_SLEEP_MINUTES = intPreferencesKey("sleepMinutes")
@@ -37,6 +38,25 @@ object PlayerPrefs {
     suspend fun deletePos(context: Context, bookId: String) {
         context.dataStore.edit { it.remove(posKey(bookId)) }
     }
+
+    /** All saved positions: bookId -> ms. One DataStore read for the library. */
+    suspend fun positions(context: Context): Map<String, Long> =
+        context.dataStore.data.first().asMap()
+            .filterKeys { it.name.startsWith("pos:") }
+            .entries.associate { it.key.name.removePrefix("pos:") to (it.value as Long) }
+
+    suspend fun getDur(context: Context, bookId: String): Long =
+        context.dataStore.data.first()[durKey(bookId)] ?: 0L
+
+    suspend fun setDur(context: Context, bookId: String, durMs: Long) {
+        context.dataStore.edit { it[durKey(bookId)] = durMs }
+    }
+
+    /** All known durations: bookId -> ms (filled while a book plays). */
+    suspend fun durations(context: Context): Map<String, Long> =
+        context.dataStore.data.first().asMap()
+            .filterKeys { it.name.startsWith("dur:") }
+            .entries.associate { it.key.name.removePrefix("dur:") to (it.value as Long) }
 
     suspend fun getSpeed(context: Context): Float =
         context.dataStore.data.first()[KEY_SPEED] ?: 1.0f

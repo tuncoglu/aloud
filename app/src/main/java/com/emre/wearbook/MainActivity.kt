@@ -32,13 +32,13 @@ class MainActivity : ComponentActivity() {
             },
             androidx.core.content.ContextCompat.getMainExecutor(this),
         )
-        // Debug hooks:
+        // Debug hooks (compiled out of release builds):
         //   --es autoplay <bookId>   play a book without UI taps
         //   --es screen <name>       start on a specific screen (library/nowplaying/uploader)
         //   --es uploader_start 1    also start the upload server immediately (perms pre-granted via pm)
-        val autoplay = intent.getStringExtra("autoplay")
-        val screen = intent.getStringExtra("screen")
-        val uploaderStart = intent.getStringExtra("uploader_start") == "1"
+        val autoplay = intent.getStringExtra("autoplay").takeIf { BuildConfig.DEBUG }
+        val screen = intent.getStringExtra("screen").takeIf { BuildConfig.DEBUG }
+        val uploaderStart = intent.getStringExtra("uploader_start") == "1" && BuildConfig.DEBUG
         setContent {
             WearApp(
                 controller = controllerState.value,

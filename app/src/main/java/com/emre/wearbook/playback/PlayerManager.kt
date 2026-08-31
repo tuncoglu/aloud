@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -30,6 +29,7 @@ import com.emre.wearbook.MainActivity
 import com.emre.wearbook.books.Book
 import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.books.Mp4ChapterParser
+import com.emre.wearbook.util.Logg
 import com.emre.wearbook.data.PlayerPrefs
 import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.Executor
@@ -49,7 +49,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
-private const val TAG = "WearBite"
 
 typealias ChapterUi = Mp4ChapterParser.Chapter
 
@@ -167,12 +166,12 @@ class PlayerManager(private val context: Context) {
         }
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                Log.d(TAG, "playerError: ${error.errorCodeName} (${error.message})")
+                Logg.d("playerError: ${error.errorCodeName} (${error.message})")
                 PlaybackState.playbackError.value = error.errorCodeName
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
-                Log.d(TAG, "onIsPlayingChanged: $playing")
+                Logg.d("onIsPlayingChanged: $playing")
                 PlaybackState.isPlaying.value = playing
                 if (playing) {
                     startPositionTicker()
@@ -184,7 +183,7 @@ class PlayerManager(private val context: Context) {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                Log.d(TAG, "onMediaItemTransition: ${mediaItem?.mediaId} reason=$reason")
+                Logg.d("onMediaItemTransition: ${mediaItem?.mediaId} reason=$reason")
                 chapterJob?.cancel()
                 chapterJob = null
                 PlaybackState.playbackError.value = null
@@ -205,10 +204,7 @@ class PlayerManager(private val context: Context) {
 
             override fun onTracksChanged(tracks: Tracks) {
                 val fmtMetadata = player.audioFormat?.metadata
-                Log.d(
-                    TAG,
-                    "onTracksChanged, audioFormat.metadata entries: ${fmtMetadata?.length() ?: 0}",
-                )
+                Logg.d("onTracksChanged, audioFormat.metadata entries: ${fmtMetadata?.length() ?: 0}")
                 fmtMetadata?.let {
                     extractChapters(it).takeIf { c -> c.isNotEmpty() }?.let { c ->
                         PlaybackState.chapters.value = c
@@ -220,6 +216,9 @@ class PlayerManager(private val context: Context) {
                 val dur = player.duration.takeIf { it > 0 }
                 if (dur != null && dur != PlaybackState.durationMs.value) {
                     PlaybackState.durationMs.value = dur
+                    // Feeds the per-book progress % in the library.
+                    val id = player.currentMediaItem?.mediaId ?: return@onEvents
+                    scope.launch { PlayerPrefs.setDur(context, id, dur) }
                 }
             }
 
@@ -247,7 +246,7 @@ class PlayerManager(private val context: Context) {
         PlaybackState.playbackError.value = null
         scope.launch {
             val saved = PlayerPrefs.getPos(context, book.id)
-            Log.d(TAG, "applyBook '${book.id}' resume at $saved ms (play: $autoPlay)")
+            Logg.d("applyBook '${book.id}' resume at $saved ms (play: $autoPlay)")
             val item = MediaItem.Builder()
                 .setMediaId(book.id)
                 .setUri(Uri.fromFile(book.file))
@@ -264,7 +263,7 @@ class PlayerManager(private val context: Context) {
                 while (player.duration <= 0) delay(100)
             }
             if (saved > 0 && player.duration > 0 && saved >= player.duration - 2_000) {
-                Log.d(TAG, "book was finished, restarting from 0")
+                Logg.d("book was finished, restarting from 0")
                 player.seekTo(0)
             }
             if (autoPlay) player.play()
@@ -278,7 +277,7 @@ class PlayerManager(private val context: Context) {
                         chapterCache[key] ?: Mp4ChapterParser.parse(book.file)
                             .also { chapterCache[key] = it }
                     }
-                    Log.d(TAG, "Mp4ChapterParser: ${parsed.size} chapters: " +
+                    Logg.d("Mp4ChapterParser: ${parsed.size} chapters: " +
                         parsed.take(3).joinToString { "${it.startMs}ms '${it.title}'" })
                     if (parsed.isNotEmpty() && player.currentMediaItem?.mediaId == book.id) {
                         PlaybackState.chapters.value = parsed

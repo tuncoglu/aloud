@@ -37,6 +37,7 @@ interface PlaybackUi {
     fun setSleepTimer(minutes: Int?)
     fun playBook(book: Book)
     fun prepareBook(book: Book)
+    fun stop()
 }
 
 class ControllerPlaybackUi(private val controller: MediaController) : PlaybackUi {
@@ -75,6 +76,8 @@ class ControllerPlaybackUi(private val controller: MediaController) : PlaybackUi
     override fun prepareBook(book: Book) {
         sendPlayBook(book, autoPlay = false)
     }
+
+    override fun stop() = controller.stop()
 
     private fun sendPlayBook(book: Book, autoPlay: Boolean) = controller.sendCustomCommand(
         SessionCommand(PlaybackCommand.PLAY_BOOK, Bundle()),

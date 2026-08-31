@@ -1,11 +1,10 @@
 package com.emre.wearbook.books
 
-import android.util.Log
+import com.emre.wearbook.util.Logg
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 
-private const val TAG = "WearBite"
 
 /**
  * Minimal ISO-BMFF chapter parser for .m4b files. Supports the two formats
@@ -75,7 +74,7 @@ object Mp4ChapterParser {
                 }
             }
         } catch (e: Exception) {
-            Log.d(TAG, "chapter parse failed: $e")
+            Logg.d("chapter parse failed: $e")
         }
         return emptyList()
     }
