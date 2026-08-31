@@ -139,7 +139,7 @@ class PlayerManager private constructor(private val context: Context) {
                 } else {
                     positionJob?.cancel()
                     positionJob = null
-                    scope.launch { persister() }
+                    savePositionNow()
                 }
             }
 
@@ -187,6 +187,11 @@ class PlayerManager private constructor(private val context: Context) {
 
     /** Play a book, resuming from its persisted position. */
     fun playBook(book: Book) {
+        // Flush the outgoing book's position while the player still refers to
+        // it: setMediaItem below swaps both the media id and the position, and
+        // a save that straddles the swap can file one book's position under the
+        // other book's key.
+        savePositionNow()
         playbackError.value = null
         scope.launch {
             val saved = PlayerPrefs.getPos(context, book.id)
@@ -298,7 +303,7 @@ class PlayerManager private constructor(private val context: Context) {
                     positionMs.value = player.currentPosition
                     if (++ticksSinceSave >= 5) {
                         ticksSinceSave = 0
-                        persister()
+                        savePositionNow()
                     }
                     delay(1_000)
                 }
@@ -307,12 +312,23 @@ class PlayerManager private constructor(private val context: Context) {
         }
     }
 
-    private suspend fun persister() {
-        nowPlaying.value?.let { book ->
-            player.currentPosition.takeIf { it > 0 }?.let { pos ->
-                PlayerPrefs.setPos(context, book.id, pos)
-            }
-        }
+    /**
+     * Read the media id and the position from the player in one go, on the
+     * main thread. The pair has to come from the same instant: the old code
+     * took the book from a StateFlow (which lags a media-item transition) and
+     * the position from the player, so switching books could persist the
+     * incoming book's position under the outgoing book's key.
+     */
+    private fun positionSnapshot(): Pair<String, Long>? {
+        val id = player.currentMediaItem?.mediaId ?: return null
+        val pos = player.currentPosition
+        return if (pos > 0) id to pos else null
+    }
+
+    /** Persist the current (book, position) pair; safe to call at any time. */
+    private fun savePositionNow() {
+        val (bookId, posMs) = positionSnapshot() ?: return
+        scope.launch { PlayerPrefs.setPos(context, bookId, posMs) }
     }
 
     /**
@@ -339,7 +355,13 @@ class PlayerManager private constructor(private val context: Context) {
         positionJob = null
         chapterJob?.cancel()
         chapterJob = null
-        runBlocking { persister() } // final position save on service teardown
+        // Final save on service teardown: snapshot first (the player is about
+        // to go away), then block only briefly — this runs on the main thread.
+        positionSnapshot()?.let { (bookId, posMs) ->
+            runBlocking {
+                withTimeoutOrNull(500) { PlayerPrefs.setPos(context, bookId, posMs) }
+            }
+        }
         player.release()
         session.release()
         scope.cancel()
