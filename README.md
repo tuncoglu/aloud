@@ -20,7 +20,8 @@ require a self-hosted server.
 - Foreground media service: keeps playing with the screen off/locked, system media
   controls + Bluetooth buttons work
 - Tiny HTTP upload server on the watch: add books from any PC browser on the same
-  WiFi — no cables, no companion app
+  WiFi — no cables, no companion app. PIN-protected: a 6-digit code shown on the
+  watch is required for every upload, listing and delete
 
 ## Install (sideload)
 
@@ -36,10 +37,12 @@ adb connect 192.168.x.y:<connect-port>  # ports rotate after each watch reboot
 ## Adding books
 
 1. On the watch: open WearBite → **Uploader** → **Start** (grant local-network
-   permission on first use). The watch's IP and URL are shown on screen.
-2. On any PC on the same WiFi: open `http://<watch-ip>:8080`, drag in `.mp3` /
-   `.m4b` files. Uploads are chunked and resumable; the server auto-stops after
-   2 minutes idle.
+   permission on first use). The watch shows its URL and a 6-digit PIN.
+2. On any PC on the same WiFi: open `http://<watch-ip>:8080`, type the PIN, drag
+   in `.mp3` / `.m4b` files. Uploads go up in 1 MiB chunks, each retried up to
+   three times; a chunk that still fails aborts that file and cleans up its
+   partial upload, so a broken transfer never lands in the library. The server
+   auto-stops after 2 minutes idle (and after 20 wrong PINs).
 
 Dev-only alternatives: `adb push` to `/data/local/tmp` then
 `adb shell "run-as com.emre.wearbook sh -c 'cp <src> files/books/'"`,
@@ -49,7 +52,11 @@ or launch with `--es autoplay <bookId>` to skip the UI.
 
 ```bash
 JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleDebug
+JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:testDebugUnitTest
 ```
+
+Unit tests cover `Mp4ChapterParser` against synthetic Nero/QuickTime files built
+in `app/src/test/.../Mp4Builder.kt` — no device or real audiobook needed.
 
 Stack: AGP 9.3.2 (built-in Kotlin), Compose for Wear OS 1.6.2, Media3 1.11.0,
 Ktor 3.3.3 (CIO), DataStore 1.2.1. minSdk 30 / targetSdk 37.
