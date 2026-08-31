@@ -4,6 +4,7 @@ import android.content.Context
 import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.data.PlayerPrefs
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
@@ -12,6 +13,7 @@ import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveStream
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.delete
@@ -23,26 +25,41 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.security.SecureRandom
 
 /**
  * Tiny embedded HTTP uploader: PC browser -> http://<watch-ip>:8080.
+ *
+ * Every mutating endpoint requires the 6-digit [pin] shown on the watch, so a
+ * stranger on the same WiFi — or a web page you happen to open, which could
+ * otherwise POST here cross-origin without a preflight — cannot write to or
+ * wipe the library. The PIN is never embedded in the served page.
+ *
  * Endpoint contract (no multipart on purpose):
- *   GET    /                        -> uploader HTML page
- *   POST   /book?name=&offset=&total= -> raw bytes appended to books/<name>.part
- *                                        (renamed to <name> when offset+len==total)
- *   GET    /books                   -> JSON list
- *   DELETE /book?name=              -> delete file + its progress positions
+ *   GET    /                               -> uploader HTML page (no PIN needed)
+ *   POST   /book?name=&offset=&total=&pin= -> raw bytes written at offset into
+ *                                             books/<name>.part, renamed to
+ *                                             <name> once offset+len == total
+ *   GET    /books?pin=                     -> JSON list
+ *   DELETE /book?name=&pin=                -> delete file + its saved positions
+ *   DELETE /part?name=&pin=                -> drop a partial upload only
  */
-class UploadServer(private val context: Context) {
+class UploadServer(
+    private val context: Context,
+    private val pin: String,
+    private val onAutoStop: () -> Unit = {},
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var server: EmbeddedServer<*, *>? = null
     private var autoStopJob: Job? = null
     @Volatile private var lastActivityMs = System.currentTimeMillis()
+    @Volatile private var badPins = 0
 
     val isRunning: Boolean get() = server != null
 
@@ -66,74 +83,192 @@ class UploadServer(private val context: Context) {
             }
 
             post("/book") {
+                if (!authorize()) return@post
                 val name = sanitizeName(call.request.queryParameters["name"])
+                    ?: return@post fail("bad name", HttpStatusCode.BadRequest)
                 val offset = call.request.queryParameters["offset"]?.toLongOrNull() ?: 0L
                 val total = call.request.queryParameters["total"]?.toLongOrNull() ?: -1L
-                if (name == null) {
-                    call.respondText("{\"error\":\"bad name\"}", ContentType.Application.Json, HttpStatusCode.BadRequest)
-                    return@post
+
+                // A chunk is bounded: the body streams to disk instead of being
+                // buffered whole, and an oversized one is refused before it can
+                // exhaust a watch's RAM.
+                val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+                if (declared != null && declared > MAX_CHUNK_BYTES) {
+                    return@post fail("chunk too large", HttpStatusCode.PayloadTooLarge)
                 }
-                val bytes = call.receiveStream().readBytes()
-                val part = File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}")
-                RandomAccessFile(part, "rw").use { raf ->
-                    raf.seek(offset)
-                    raf.write(bytes)
+
+                val dir = BooksRepository.booksDir(context)
+                val part = File(dir, "$name${BooksRepository.PART_SUFFIX}")
+                // Writes may only land inside what has already been received (an
+                // append, or a re-send of an earlier chunk) — never at an
+                // arbitrary caller-chosen file position.
+                if (offset < 0 || offset > part.length()) {
+                    return@post fail("bad offset", HttpStatusCode.BadRequest)
                 }
+                if (total in 1..offset) {
+                    return@post fail("offset past total", HttpStatusCode.BadRequest)
+                }
+                if (offset == 0L && total > 0 && dir.usableSpace < total + FREE_SPACE_MARGIN) {
+                    return@post fail("not enough free space", HttpStatusCode.InsufficientStorage)
+                }
+
+                val written = withContext(Dispatchers.IO) {
+                    RandomAccessFile(part, "rw").use { raf ->
+                        raf.seek(offset)
+                        val buf = ByteArray(64 * 1024)
+                        var n = 0L
+                        call.receiveStream().use { input ->
+                            while (true) {
+                                val read = input.read(buf)
+                                if (read <= 0) break
+                                if (n + read > MAX_CHUNK_BYTES) return@use -1L
+                                raf.write(buf, 0, read)
+                                n += read
+                            }
+                        }
+                        n
+                    }
+                }
+                if (written < 0) return@post fail("chunk too large", HttpStatusCode.PayloadTooLarge)
+
                 lastActivityMs = System.currentTimeMillis()
-                val received = offset + bytes.size
-                if (total > 0 && received >= total && bytes.isNotEmpty()) {
-                    val final = part.resolveSibling(name)
-                    part.renameTo(final)
-                    call.respondText("{\"ok\":true,\"received\":$received,\"complete\":true}", ContentType.Application.Json)
+                val received = offset + written
+                if (total > 0 && received >= total && written > 0) {
+                    // An abandoned .part left over from a longer previous
+                    // upload would otherwise survive as trailing garbage.
+                    if (part.length() > total) {
+                        withContext(Dispatchers.IO) {
+                            RandomAccessFile(part, "rw").use { it.setLength(total) }
+                        }
+                    }
+                    val final = File(dir, name)
+                    if (!part.renameTo(final)) {
+                        return@post fail("rename failed", HttpStatusCode.InternalServerError)
+                    }
+                    call.respondText(
+                        "{\"ok\":true,\"received\":$received,\"complete\":true}",
+                        ContentType.Application.Json,
+                    )
                 } else {
-                    call.respondText("{\"ok\":true,\"received\":$received}", ContentType.Application.Json)
+                    call.respondText(
+                        "{\"ok\":true,\"received\":$received}",
+                        ContentType.Application.Json,
+                    )
                 }
             }
 
             get("/books") {
-                val list = BooksRepository.list(context)
-                val json = list.joinToString(prefix = "[", postfix = "]") { b ->
+                if (!authorize()) return@get
+                val json = BooksRepository.list(context).joinToString(prefix = "[", postfix = "]") { b ->
                     "{\"name\":\"${b.id}\",\"size\":${b.file.length()},\"modified\":${b.file.lastModified()}}"
                 }
                 call.respondText(json, ContentType.Application.Json)
             }
 
             delete("/book") {
+                if (!authorize()) return@delete
                 val name = sanitizeName(call.request.queryParameters["name"])
-                if (name != null) {
-                    File(BooksRepository.booksDir(context), name).delete()
-                    File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}").delete()
-                    PlayerPrefs.deletePos(context, name)
-                    lastActivityMs = System.currentTimeMillis()
-                    call.respondText("{\"ok\":true}", ContentType.Application.Json)
-                } else {
-                    call.respondText("{\"error\":\"bad name\"}", ContentType.Application.Json, HttpStatusCode.BadRequest)
-                }
+                    ?: return@delete fail("bad name", HttpStatusCode.BadRequest)
+                File(BooksRepository.booksDir(context), name).delete()
+                File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}").delete()
+                PlayerPrefs.deletePos(context, name)
+                lastActivityMs = System.currentTimeMillis()
+                call.respondText("{\"ok\":true}", ContentType.Application.Json)
+            }
+
+            // Cleanup path for an aborted upload: drops the .part only, so a
+            // failed transfer leaves no dead weight and never touches a good book.
+            delete("/part") {
+                if (!authorize()) return@delete
+                val name = sanitizeName(call.request.queryParameters["name"])
+                    ?: return@delete fail("bad name", HttpStatusCode.BadRequest)
+                File(BooksRepository.booksDir(context), "$name${BooksRepository.PART_SUFFIX}").delete()
+                lastActivityMs = System.currentTimeMillis()
+                call.respondText("{\"ok\":true}", ContentType.Application.Json)
             }
         }
     }
 
+    /**
+     * Rejects the call unless the PIN matches. A wrong PIN deliberately does NOT
+     * count as activity, so a brute-forcer cannot hold the 2-minute idle stop
+     * open; [MAX_BAD_PINS] wrong guesses shut the server down outright.
+     */
+    private suspend fun RoutingContext.authorize(): Boolean {
+        if (constantTimeEquals(call.request.queryParameters["pin"].orEmpty(), pin)) return true
+        badPins++
+        call.respondText(
+            "{\"error\":\"bad pin\"}",
+            ContentType.Application.Json,
+            HttpStatusCode.Unauthorized,
+        )
+        if (badPins >= MAX_BAD_PINS) {
+            scope.launch {
+                delay(250) // let the 401 flush before the engine goes down
+                stop()
+                onAutoStop()
+            }
+        }
+        return false
+    }
+
+    private suspend fun RoutingContext.fail(message: String, status: HttpStatusCode) {
+        call.respondText("{\"error\":\"$message\"}", ContentType.Application.Json, status)
+    }
+
+    private fun constantTimeEquals(a: String, b: String): Boolean {
+        if (b.isEmpty()) return false
+        var diff = a.length xor b.length
+        for (i in a.indices) diff = diff or (a[i].code xor b[i % b.length].code)
+        return diff == 0
+    }
+
+    /**
+     * Names are *rejected*, not stripped: silently deleting characters turned
+     * "Björn.m4b" into "Bjrn.m4b" and could collide two books onto one file.
+     * Separators, dot-segments, control chars and quotes (the JSON above is
+     * hand-rolled) are the only things that must not get through.
+     */
     private fun sanitizeName(raw: String?): String? {
-        if (raw.isNullOrBlank()) return null
-        val cleaned = raw.replace(Regex("[^A-Za-z0-9._ -]"), "").trim()
-        if (cleaned.contains("..") || cleaned.endsWith(BooksRepository.PART_SUFFIX)) return null
-        return if (BooksRepository.isSupportedName(cleaned)) cleaned else null
+        val name = raw?.trim().orEmpty()
+        if (name.isEmpty() || name.length > MAX_NAME_LENGTH) return null
+        if (name.startsWith(".") || name.contains("..")) return null
+        if (name.any { it == '/' || it == '\\' || it == '"' || it.code < 0x20 || it.code == 0x7F }) return null
+        if (name.endsWith(BooksRepository.PART_SUFFIX)) return null
+        if (name.substringBeforeLast('.', "").isBlank()) return null
+        return if (BooksRepository.isSupportedName(name)) name else null
     }
 
     private fun startAutoStop() {
         autoStopJob?.cancel()
         autoStopJob = scope.launch {
             while (isActive) {
-                if (System.currentTimeMillis() - lastActivityMs > 2 * 60_000L) {
-                    stop()
+                delay(10_000)
+                if (System.currentTimeMillis() - lastActivityMs > IDLE_TIMEOUT_MS) {
+                    // Stop the *service* too: stopping only the engine left the
+                    // notification up and the UI claiming "Uploader on".
+                    server?.stop(0, 0)
+                    server = null
+                    autoStopJob = null
+                    onAutoStop()
                     return@launch
                 }
-                delay(10_000)
             }
         }
     }
 
     companion object {
+        const val PIN_LENGTH = 6
+        private const val MAX_CHUNK_BYTES = 4L * 1024 * 1024
+        private const val FREE_SPACE_MARGIN = 32L * 1024 * 1024
+        private const val IDLE_TIMEOUT_MS = 2 * 60_000L
+        private const val MAX_BAD_PINS = 20
+        private const val MAX_NAME_LENGTH = 180
+
+        /** Fresh PIN per server start; shown on the watch, never served over HTTP. */
+        fun newPin(): String =
+            SecureRandom().nextInt(1_000_000).toString().padStart(PIN_LENGTH, '0')
+
         /** First non-loopback IPv4 of the watch, for display in the app. */
         fun watchIpv4(): String? = try {
             NetworkInterface.getNetworkInterfaces().toList()
@@ -151,23 +286,49 @@ private val UPLOADER_HTML = """
 <!doctype html>
 <html><head><meta charset="utf-8"><title>WearBite upload</title></head>
 <body style="font-family:sans-serif;max-width:40rem;margin:2rem auto">
-<h2>WearBite — add audiobooks</h2>
+<h2>WearBite &mdash; add audiobooks</h2>
+<p><label>PIN from watch: <input id="pin" inputmode="numeric" size="8" autocomplete="off"></label></p>
 <input type="file" id="f" multiple>
 <ul id="s"></ul>
 <script>
-const CHUNK = 1 << 20;
-async function up(file){
-  const li = document.createElement('li'); li.textContent = file.name; s.appendChild(li);
-  const total = file.size;
-  for(let off = 0; off < total; off += CHUNK){
-    const body = file.slice(off, Math.min(off + CHUNK, total));
-    const r = await fetch('book?name=' + encodeURIComponent(file.name) + '&offset=' + off + '&total=' + total,
-      {method:'POST', body:body});
-    if(!r.ok){ li.textContent = file.name + ' — upload failed at ' + off; continue; }
-    li.textContent = file.name + ' — ' + Math.min(off + CHUNK, total) + '/' + total;
-  }
-  li.textContent = file.name + ' — done';
+var CHUNK = 1 << 20, TRIES = 3;
+var pinEl = document.getElementById('pin'), fEl = document.getElementById('f'), sEl = document.getElementById('s');
+pinEl.value = new URLSearchParams(location.search).get('pin') || '';
+function q(name, pin, extra){
+  return 'name=' + encodeURIComponent(name) + '&pin=' + encodeURIComponent(pin) + (extra || '');
 }
-f.onchange = async e => { for(const file of e.target.files) await up(file); };
+async function up(file, pin){
+  var li = document.createElement('li'); li.textContent = file.name; sEl.appendChild(li);
+  var total = file.size;
+  for(var off = 0; off < total; off += CHUNK){
+    var end = Math.min(off + CHUNK, total);
+    var ok = false, why = '';
+    for(var t = 0; t < TRIES && !ok; t++){
+      if(t) await new Promise(function(r){ setTimeout(r, 500 * t); });
+      try{
+        var r = await fetch('book?' + q(file.name, pin, '&offset=' + off + '&total=' + total),
+          {method:'POST', body:file.slice(off, end)});
+        if(r.ok) ok = true; else why = 'HTTP ' + r.status + ' ' + (await r.text());
+      }catch(e){ why = e.message; }
+    }
+    // A failed chunk ABORTS the file. Skipping ahead (the old behaviour) left a
+    // hole in the middle and still renamed the result into the library.
+    if(!ok){
+      li.textContent = file.name + ' \u2014 FAILED at ' + off + '/' + total + ' (' + why + ') \u2014 aborted, nothing added';
+      try{ await fetch('part?' + q(file.name, pin), {method:'DELETE'}); }catch(e){}
+      return false;
+    }
+    li.textContent = file.name + ' \u2014 ' + Math.round(end / total * 100) + '%';
+  }
+  li.textContent = file.name + ' \u2014 done';
+  return true;
+}
+fEl.onchange = async function(e){
+  var pin = pinEl.value.trim();
+  if(!pin){ alert('Enter the PIN shown on the watch first.'); return; }
+  for(var i = 0; i < e.target.files.length; i++){
+    if(!await up(e.target.files[i], pin)) break;
+  }
+};
 </script></body></html>
 """

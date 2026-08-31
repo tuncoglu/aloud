@@ -25,12 +25,17 @@ class UploadServerService : Service() {
         when (intent?.action) {
             ACTION_START -> startServer()
             ACTION_STOP -> stopSelf()
+            // A restart with no action (or a null intent) must not leave a
+            // foreground service running without ever calling startForeground().
+            else -> if (server == null) stopSelf()
         }
-        return START_STICKY
+        // The uploader is user-started and self-expiring: never resurrect it.
+        return START_NOT_STICKY
     }
 
     private fun startServer() {
         if (server != null) return
+        val newPin = UploadServer.newPin()
         val channel = NotificationChannel(
             CHANNEL_ID, "Uploads", NotificationManager.IMPORTANCE_LOW,
         )
@@ -38,11 +43,15 @@ class UploadServerService : Service() {
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(getString(R.string.app_name) + " uploads")
+            .setContentText("PIN " + newPin)
             .setOngoing(true)
             .build()
         startForeground(1, notification)
-        server = UploadServer(this)
+        // The idle auto-stop tears the whole service down, so the notification
+        // and the "Uploader on" UI can never outlive the running server.
+        server = UploadServer(this, newPin, onAutoStop = { stopSelf() })
         server?.start(PORT)
+        pin.value = newPin
         running.value = true
     }
 
@@ -50,6 +59,7 @@ class UploadServerService : Service() {
         server?.stop()
         server = null
         running.value = false
+        pin.value = null
         super.onDestroy()
     }
 
@@ -60,6 +70,9 @@ class UploadServerService : Service() {
         const val PORT = 8080
 
         val running = MutableStateFlow(false)
+
+        /** PIN of the currently running server, for display on the watch. */
+        val pin = MutableStateFlow<String?>(null)
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, UploadServerService::class.java).setAction(ACTION_START))

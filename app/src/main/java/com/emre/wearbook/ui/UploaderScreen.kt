@@ -25,6 +25,7 @@ import com.emre.wearbook.upload.UploadServerService
 fun UploaderScreen() {
     val context = LocalContext.current
     val running by UploadServerService.running.collectAsState()
+    val pin by UploadServerService.pin.collectAsState()
     val ip = remember { UploadServer.watchIpv4() ?: "?" }
 
     val permLauncher = rememberLauncherForActivityResult(
@@ -49,10 +50,15 @@ fun UploaderScreen() {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = if (running) "Uploader on\nhttp://$ip:${UploadServerService.PORT}"
-            else "Uploader off",
+            text = if (running) "http://$ip:${UploadServerService.PORT}" else "Uploader off",
             textAlign = TextAlign.Center,
         )
+        if (running) {
+            Text(
+                text = "PIN ${pin ?: "…"}",
+                textAlign = TextAlign.Center,
+            )
+        }
         Button(
             onClick = { if (running) UploadServerService.stop(context) else ensurePermissionsAndStart() },
         ) { Text(if (running) "Stop" else "Start") }
