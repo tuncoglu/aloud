@@ -234,7 +234,11 @@ has been *seen* running. Verify on the Pixel Watch 5 once, in this order:
    fixed in 15da138).
 4. ⬜ **Crown/rotary + TimeText + chapter-list auto-follow** — compile-verified
    only; can't be exercised over adb (needs the physical crown).
-5. ⬜ **Long-press delete** — UI implemented; not exercised on-device yet.
+5. ✅ **Long-press delete** — verified on-device (long-press → confirm dialog →
+   file removed → library list refreshes immediately, twice). The transient
+   "Deleted" flash was added after the first test showed no acknowledgment;
+   its 1.8 s window can't be captured through uiautomator's dump latency, so
+   the visual itself still wants a human glance.
 6. ⬜ **Library progress %** — data path verified (0:22 shown after resume);
    the visual "· N%" suffix not checked.
 7. ✅ **PIN upload flow** — 401 without/wrong PIN, 159 MB M4B chunked
