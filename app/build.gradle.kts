@@ -23,6 +23,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        // Mp4ChapterParser logs through android.util.Log; JVM unit tests get
+        // stubs rather than "not mocked" exceptions.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -34,4 +40,5 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)
+    testImplementation(libs.junit)
 }

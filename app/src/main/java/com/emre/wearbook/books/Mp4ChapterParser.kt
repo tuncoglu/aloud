@@ -22,6 +22,9 @@ object Mp4ChapterParser {
 
     data class Chapter(val startMs: Long, val endMs: Long, val title: String)
 
+    /** Sanity ceiling for every sample/chunk table: a chapter track is tiny. */
+    private const val MAX_SAMPLES = 100_000
+
     fun parse(file: File): List<Chapter> {
         try {
             RandomAccessFile(file, "r").use { raf ->
@@ -173,26 +176,41 @@ object Mp4ChapterParser {
         // The entry count sits at +4; +8 is the first pair's count field.
         raf.seek(stts.payloadStart + 4)
         val entryCount = raf.readInt()
-        if (entryCount <= 0 || entryCount > 100_000) return null
-        val startTimesMs = ArrayList<Long>(entryCount)
+        if (entryCount <= 0 || entryCount > MAX_SAMPLES) return null
+        val startTimesMs = ArrayList<Long>(minOf(entryCount, 1024))
         var t = 0L
         var sampleCount = 0
         for (i in 0 until entryCount) {
             val count = raf.readInt()
             val delta = raf.readInt()
+            if (count < 0 || delta < 0) return null
+            // A single stts entry carries a sample *count*, so the expansion
+            // below is unbounded on its own: an audio track (or a corrupt box)
+            // claiming millions of samples would allocate until the app dies.
+            // A chapter track has tens of entries — anything past the cap is
+            // not one, so bail out instead of building the list.
+            sampleCount += count
+            if (sampleCount > MAX_SAMPLES) return null
             for (j in 0 until count) {
                 startTimesMs.add(t * 1000 / timescale)
                 t += delta
             }
-            sampleCount += count
         }
 
-        // stsz: version/flags(4) + sampleSize(4) + sampleCount(4), then sizes
-        raf.seek(stsz.payloadStart + 12)
+        // stsz: version/flags(4) + sampleSize(4) + sampleCount(4), then — only
+        // when sampleSize is 0 — one u32 size per sample. The count sits at +8:
+        // reading it from +12 picked up the FIRST SIZE instead, which both
+        // capped the chapter count at "however many bytes the first sample
+        // happens to be" and shifted every size one entry down, truncating
+        // titles whenever the next sample was shorter than this one.
+        raf.seek(stsz.payloadStart + 4)
+        val uniformSize = raf.readInt()
+        if (uniformSize < 0) return null
         val samples = raf.readInt()
-        if (samples <= 0 || samples > 100_000) return null
+        if (samples <= 0 || samples > MAX_SAMPLES) return null
         val sizes = IntArray(samples)
-        for (i in 0 until samples) sizes[i] = raf.readInt()
+        if (uniformSize > 0) sizes.fill(uniformSize)
+        else for (i in 0 until samples) sizes[i] = raf.readInt()
 
         // Sample data is located via the chunk offset table (stco/co64) plus
         // per-chunk sample counts (stsc). The old mdat-sequential heuristic
@@ -204,7 +222,7 @@ object Mp4ChapterParser {
             ?: return null
         raf.seek(stsc.payloadStart + 4)
         val stscCount = raf.readInt()
-        if (stscCount <= 0 || stscCount > 100_000) return null
+        if (stscCount <= 0 || stscCount > MAX_SAMPLES) return null
         val runs = mutableListOf<LongArray>() // [firstChunk(1-based), samplesPerChunk]
         var prevFirstChunk = 0L
         for (i in 0 until stscCount) {
@@ -218,7 +236,7 @@ object Mp4ChapterParser {
         val isCo64 = stco.type == "co64"
         raf.seek(stco.payloadStart + 4)
         val chunkCount = raf.readInt()
-        if (chunkCount <= 0 || chunkCount > 100_000) return null
+        if (chunkCount <= 0 || chunkCount > MAX_SAMPLES) return null
         val chunkOffsets = LongArray(chunkCount)
         for (i in 0 until chunkCount) {
             chunkOffsets[i] = if (isCo64) raf.readLong()
