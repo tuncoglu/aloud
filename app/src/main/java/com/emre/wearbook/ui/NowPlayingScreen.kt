@@ -20,7 +20,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
-import com.emre.wearbook.playback.PlayerManager
+import com.emre.wearbook.playback.PlaybackState
+import com.emre.wearbook.playback.PlaybackUi
 import com.emre.wearbook.playback.chapterIndexAt
 import kotlinx.coroutines.delay
 
@@ -28,16 +29,16 @@ private val SPEED_OPTIONS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 private val SLEEP_OPTIONS = listOf(15, 30, 60, 120)
 
 @Composable
-fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
-    val nowPlaying by manager.nowPlaying.collectAsState()
-    val isPlaying by manager.isPlaying.collectAsState()
-    val positionMs by manager.positionMs.collectAsState()
-    val durationMs by manager.durationMs.collectAsState()
-    val chapters by manager.chapters.collectAsState()
-    val speed by manager.speed.collectAsState()
-    val sleepEndMs by manager.sleepEndMs.collectAsState()
-    val sleepArmed by manager.sleepMinutes.collectAsState()
-    val error by manager.playbackError.collectAsState()
+fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
+    val nowPlaying by PlaybackState.nowPlaying.collectAsState()
+    val isPlaying by PlaybackState.isPlaying.collectAsState()
+    val positionMs by PlaybackState.positionMs.collectAsState()
+    val durationMs by PlaybackState.durationMs.collectAsState()
+    val chapters by PlaybackState.chapters.collectAsState()
+    val speed by PlaybackState.speed.collectAsState()
+    val sleepEndMs by PlaybackState.sleepEndMs.collectAsState()
+    val sleepArmed by PlaybackState.sleepMinutes.collectAsState()
+    val error by PlaybackState.playbackError.collectAsState()
 
     // Tick once a minute so the sleep countdown stays fresh.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -87,18 +88,18 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
             // Chapters when present; otherwise -30s/+30s rewind/fast-forward.
             Button(
                 onClick = {
-                    if (chapters.isNotEmpty()) manager.skipToChapter((chapterIndex - 1).coerceAtLeast(0))
-                    else manager.skipRelative(-30_000)
+                    if (chapters.isNotEmpty()) ui.skipToChapter((chapterIndex - 1).coerceAtLeast(0))
+                    else ui.skipRelative(-30_000)
                 },
                 enabled = if (chapters.isNotEmpty()) chapterIndex > 0 else durationMs > 0,
             ) { Text("⏮") }
-            Button(onClick = { manager.togglePlayPause() }) {
+            Button(onClick = { ui.togglePlayPause() }) {
                 Text(if (isPlaying) "⏸" else "▶")
             }
             Button(
                 onClick = {
-                    if (chapters.isNotEmpty()) manager.skipToChapter(chapterIndex + 1)
-                    else manager.skipRelative(30_000)
+                    if (chapters.isNotEmpty()) ui.skipToChapter(chapterIndex + 1)
+                    else ui.skipRelative(30_000)
                 },
                 enabled = if (chapters.isNotEmpty()) chapterIndex < chapters.size - 1 else durationMs > 0,
             ) { Text("⏭") }
@@ -116,7 +117,7 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
         ) {
             Button(onClick = {
                 val next = SPEED_OPTIONS[(SPEED_OPTIONS.indexOf(speed) + 1) % SPEED_OPTIONS.size]
-                manager.setSpeed(next)
+                ui.setSpeed(next)
             }) { Text("%.2f×".format(speed)) }
 
             // Cycle from the armed option, not the shrunk remaining minutes:
@@ -127,7 +128,7 @@ fun NowPlayingScreen(manager: PlayerManager, onOpenChapters: () -> Unit) {
                     SLEEP_OPTIONS.lastIndex -> null // off
                     else -> SLEEP_OPTIONS[idx + 1]
                 }
-                manager.setSleepTimer(next)
+                ui.setSleepTimer(next)
             }) { Text(if (sleepEndMs != null) "Zzz ${sleepRemainingMin}m" else "Sleep") }
         }
     }

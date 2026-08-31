@@ -14,9 +14,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.media3.session.MediaController
 import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.data.PlayerPrefs
-import com.emre.wearbook.playback.PlayerManager
+import com.emre.wearbook.playback.ControllerPlaybackUi
+import com.emre.wearbook.playback.PlaybackUi
 import com.emre.wearbook.upload.UploadServerService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,9 +31,17 @@ private sealed interface Screen {
 }
 
 @Composable
-fun WearApp(autoplayBookId: String? = null, initialScreen: String? = null, startUploader: Boolean = false) {
+fun WearApp(
+    controller: MediaController?,
+    autoplayBookId: String? = null,
+    initialScreen: String? = null,
+    startUploader: Boolean = false,
+) {
     val context = LocalContext.current
-    val manager = remember { PlayerManager.get(context) }
+    // The UI drives playback exclusively through the MediaController — never
+    // through the player object the service owns. Rebuilds when the controller
+    // connection settles; until then the buttons simply are not interactive.
+    val ui: PlaybackUi? = remember(controller) { controller?.let(::ControllerPlaybackUi) }
     var screen by remember {
         mutableStateOf(
             when (initialScreen) {
@@ -46,10 +56,11 @@ fun WearApp(autoplayBookId: String? = null, initialScreen: String? = null, start
         if (startUploader) UploadServerService.start(context)
     }
 
-    LaunchedEffect(autoplayBookId) {
+    LaunchedEffect(autoplayBookId, ui) {
+        if (ui == null) return@LaunchedEffect
         if (autoplayBookId != null) {
             BooksRepository.bookByName(context, autoplayBookId)?.let {
-                manager.playBook(it)
+                ui.playBook(it)
                 screen = Screen.NowPlaying
             }
         } else {
@@ -58,7 +69,7 @@ fun WearApp(autoplayBookId: String? = null, initialScreen: String? = null, start
             val lastId = withContext(Dispatchers.IO) { PlayerPrefs.getLastBook(context) }
             val last = lastId?.let { BooksRepository.bookByName(context, it) }
             if (last != null) {
-                manager.prepareBook(last)
+                ui.prepareBook(last)
                 screen = Screen.NowPlaying
             }
         }
@@ -79,22 +90,23 @@ fun WearApp(autoplayBookId: String? = null, initialScreen: String? = null, start
         }
     }
 
+    val uiOr: PlaybackUi = ui ?: return
     when (screen) {
         Screen.Library -> LibraryScreen(
             onPlay = {
                 requestNotificationPermission()
-                manager.playBook(it)
+                uiOr.playBook(it)
                 screen = Screen.NowPlaying
             },
             onOpenUploader = { screen = Screen.Uploader },
         )
         Screen.NowPlaying -> {
             BackHandler { screen = Screen.Library }
-            NowPlayingScreen(manager, onOpenChapters = { screen = Screen.Chapters })
+            NowPlayingScreen(uiOr, onOpenChapters = { screen = Screen.Chapters })
         }
         Screen.Chapters -> {
             BackHandler { screen = Screen.NowPlaying }
-            ChapterScreen(manager)
+            ChapterScreen(uiOr)
         }
         Screen.Uploader -> {
             BackHandler { screen = Screen.Library }

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.mutableStateOf
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -12,11 +13,11 @@ import com.emre.wearbook.ui.WearApp
 
 class MainActivity : ComponentActivity() {
 
-    /** Binds the PlaybackService so it can promote to a foreground service
-     *  while playing — the binding (not startForegroundService) is what Media3
-     *  expects; its notification manager handles the FGS promotion on playback. */
-    private var controller: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
+
+    /** Composable state holding the resolved controller, so the UI can rebuild
+     *  with a working PlaybackUi the moment the connection settles. */
+    private val controllerState = mutableStateOf<MediaController?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,7 +28,7 @@ class MainActivity : ComponentActivity() {
             {
                 // The activity may be gone before the future resolves: cancelled
                 // futures must not be read, and nothing may leak a live controller.
-                controller = runCatching { future.get() }.getOrNull()
+                controllerState.value = runCatching { future.get() }.getOrNull()
             },
             androidx.core.content.ContextCompat.getMainExecutor(this),
         )
@@ -39,15 +40,21 @@ class MainActivity : ComponentActivity() {
         val screen = intent.getStringExtra("screen")
         val uploaderStart = intent.getStringExtra("uploader_start") == "1"
         setContent {
-            WearApp(autoplayBookId = autoplay, initialScreen = screen, startUploader = uploaderStart)
+            WearApp(
+                controller = controllerState.value,
+                autoplayBookId = autoplay,
+                initialScreen = screen,
+                startUploader = uploaderStart,
+            )
         }
     }
 
     override fun onDestroy() {
-        controller?.release()
-        controller = null
-        // releaseFuture cancels the pending build too: without it, an activity
-        // destroyed before the controller resolved leaked a live binding.
+        // The resolved controller is released here; releaseFuture additionally
+        // cancels a still-pending build — without it, an activity destroyed
+        // before the controller resolved leaked a live binding.
+        controllerState.value?.release()
+        controllerState.value = null
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
         super.onDestroy()

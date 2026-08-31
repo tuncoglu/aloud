@@ -9,15 +9,16 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        playerManager = PlayerManager.get(this)
+        playerManager = PlayerManager(this)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         playerManager?.session
 
     override fun onDestroy() {
-        // Only release when the service is really being torn down —
-        // the player is recreated lazily if the app is relaunched.
+        // The manager is service-owned: no process-wide singleton, so a
+        // service teardown cannot leave the UI holding a released player.
+        // The UI talks to us through MediaController, which reconnects.
         playerManager?.release()
         playerManager = null
         super.onDestroy()

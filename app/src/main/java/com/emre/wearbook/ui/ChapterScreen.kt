@@ -17,13 +17,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.Text
-import com.emre.wearbook.playback.PlayerManager
+import com.emre.wearbook.playback.PlaybackState
+import com.emre.wearbook.playback.PlaybackUi
 import com.emre.wearbook.playback.chapterIndexAt
 
 @Composable
-fun ChapterScreen(manager: PlayerManager) {
-    val chapters by manager.chapters.collectAsState()
-    val positionMs by manager.positionMs.collectAsState()
+fun ChapterScreen(ui: PlaybackUi) {
+    val chapters by PlaybackState.chapters.collectAsState()
+    val positionMs by PlaybackState.positionMs.collectAsState()
     val current = chapters.chapterIndexAt(positionMs)
 
     if (chapters.isEmpty()) {
@@ -44,7 +45,7 @@ fun ChapterScreen(manager: PlayerManager) {
                 color = if (i == current) Color.Cyan else Color.Unspecified,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { manager.skipToChapter(i) }
+                    .clickable { ui.skipToChapter(i) }
                     .padding(vertical = 8.dp, horizontal = 16.dp),
                 maxLines = 2,
             )
