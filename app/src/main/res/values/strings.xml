@@ -8,6 +8,7 @@
     <string name="library_delete_message">Removes %1$s from the watch. Saved position is gone too.</string>
     <string name="action_delete">Delete</string>
     <string name="action_cancel">Cancel</string>
+    <string name="library_delete_done">Deleted</string>
     <string name="chapters_header">Chapters</string>
     <string name="chapters_empty">No chapter metadata</string>
     <string name="action_previous_chapter">Previous chapter</string>

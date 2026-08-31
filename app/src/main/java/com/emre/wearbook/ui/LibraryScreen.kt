@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,21 +36,25 @@ import com.emre.wearbook.books.Book
 import com.emre.wearbook.books.BooksRepository
 import com.emre.wearbook.data.PlayerPrefs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** R28/R29/R31/R33/R34: TransformingLazyColumn with crown scrolling, per-book
  *  progress %, and long-press delete against a confirmation dialog. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit, onDelete: (Book) -> Unit) {
+fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit, onDelete: suspend (Book) -> Unit) {
     val context = LocalContext.current
     var books by remember { mutableStateOf<List<Book>>(emptyList()) }
     var positions by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var durations by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
+    var deletedFlash by remember { mutableStateOf(false) }
     val listState = rememberTransformingLazyColumnState()
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    suspend fun reload() {
         val loaded = withContext(Dispatchers.IO) {
             Triple(BooksRepository.list(context), PlayerPrefs.positions(context), PlayerPrefs.durations(context))
         }
@@ -57,6 +62,8 @@ fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit, onDelete: 
         positions = loaded.second
         durations = loaded.third
     }
+
+    LaunchedEffect(Unit) { reload() }
 
     if (books.isEmpty()) {
         Column(
@@ -101,6 +108,15 @@ fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit, onDelete: 
                 )
             }
         }
+        if (deletedFlash) {
+            Text(
+                text = stringResource(R.string.library_delete_done),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 16.dp),
+                textAlign = TextAlign.Center,
+            )
+        }
         // Pinned footer: a last list item scrolled below the bezel is invisible
         // and untappable; this one is always on screen.
         Button(
@@ -128,8 +144,16 @@ fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit, onDelete: 
                     maxLines = 2,
                 )
                 Button(onClick = {
-                    onDelete(book)
                     pendingDelete = null
+                    scope.launch {
+                        onDelete(book)
+                        reload()
+                        // Acknowledgment: the watch shows no system feedback for
+                        // app data removal, so the library confirms it itself.
+                        deletedFlash = true
+                        delay(1_800)
+                        deletedFlash = false
+                    }
                 }) { Text(stringResource(R.string.action_delete)) }
                 Button(onClick = { pendingDelete = null }) {
                     Text(stringResource(R.string.action_cancel))
