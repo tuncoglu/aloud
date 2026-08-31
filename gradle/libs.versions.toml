@@ -6,8 +6,9 @@ agp = "9.3.2"
 kotlinCompose = "2.2.10"
 wearCompose = "1.6.2"
 media3 = "1.11.0"
-ktor = "3.3.3"
+ktor = "3.5.2"
 datastore = "1.2.1"
+coroutines = "1.11.0"
 activityCompose = "1.13.0"
 junit = "4.13.2"
 annotationExperimental = "1.6.0"
@@ -24,6 +25,9 @@ datastore-preferences = { module = "androidx.datastore:datastore-preferences", v
 junit = { module = "junit:junit", version.ref = "junit" }
 # Provides androidx.annotation.OptIn — the opt-in Media3's @UnstableApi honours.
 androidx-annotation-experimental = { module = "androidx.annotation:annotation-experimental", version.ref = "annotationExperimental" }
+# Pinned explicitly: Media3/Compose pull 1.10.2 transitively; 1.11.0 is the
+# current stable and binary-compatible.
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
