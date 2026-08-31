@@ -224,26 +224,32 @@ Confirmed available in the *already pinned* wear-compose 1.6.2 — no version bu
 Everything above compiles, lints (0 errors) and passes 33 JVM tests; none of it
 has been *seen* running. Verify on the Pixel Watch 5 once, in this order:
 
-1. **Lock-screen continuation is still solid** — play a book, screen off, ~10 min;
-   screen on: still playing, position advanced, no "Released player" crash. This
-   is the Phase-2 refactor's main regression risk; the MediaController binding is
-   what promotes the FGS.
-2. **Transport round-trip** — play/pause/skip/±30s/speed chip and the system and
-   Bluetooth media buttons all still work (they now go through the controller).
-3. **Paused seek** — pause, tap a chapter; the position text and cyan highlight
-   must update immediately (R11).
-4. **Chapter list** — opens on the current chapter (R31), crown scrolls both
-   lists (R29), TimeText shows.
-5. **Long-press delete** — confirm dialog, file and position gone; deleting the
-   playing book stops playback cleanly (R34).
-6. **Library progress %** — appears once a book has played at all (R33).
-7. **The PIN upload flow** — browser end-to-end with the new PIN field (the
-   previous drag-and-drop verification predates the PIN, retry and streamed
-   writes).
-8. **Signed release APK** — install, play, chapters, upload. If Ktor misbehaves
-   under R8, D1's ServerSocket fallback is the plan.
-9. **Continue-listening** — cold start after playing a book lands on NowPlaying,
-   paused at the saved position (R17).
+1. ✅ **Lock-screen continuation** — 40 s screen-off at 1.25×: still PLAYING,
+   position advanced, no "Released player". The Phase-2 refactor's main risk
+   is retired (a longer soak is still worth doing at some point).
+2. ✅ **Transport round-trip** — system media keys (MEDIA_PLAY/PAUSE) work
+   through Media3; speed chip 1.00 → 1.25× and persists across restarts.
+3. ✅ **Paused seek** — chapter tap while paused updates position + chapter
+   immediately (R11; the on-device run caught the initial-prepare 0:00 bug,
+   fixed in 15da138).
+4. ⬜ **Crown/rotary + TimeText + chapter-list auto-follow** — compile-verified
+   only; can't be exercised over adb (needs the physical crown).
+5. ⬜ **Long-press delete** — UI implemented; not exercised on-device yet.
+6. ⬜ **Library progress %** — data path verified (0:22 shown after resume);
+   the visual "· N%" suffix not checked.
+7. ✅ **PIN upload flow** — 401 without/wrong PIN, 159 MB M4B chunked
+   upload byte-exact in the release build, listing, offset validation (400),
+   HTTP delete. Browser drag-and-drop itself relies on the same contract.
+8. ✅ **Signed release APK** — installs, 17-chapter M4B parses and plays,
+   resume across restarts, uploader runs (Ktor under R8: no ServerSocket
+   fallback needed).
+9. ✅ **Continue-listening** — cold start lands on NowPlaying, paused at the
+   saved position with the correct chapter (R17).
+
+**Two bugs were found and fixed by this checklist** (commit 15da138):
+custom commands had to be advertised in onConnect (they were refused
+silently), and positionMs needed an explicit read on media-item transition
+(a book prepared while paused showed 0:00).
 
 ---
 
