@@ -2,6 +2,9 @@
 
 Status markers: ✅ done · 🔶 needs user hands-on test · ⬜ todo
 
+Inventory of ideas lives here; the **ordered remediation plan with acceptance
+criteria** lives in [REMEDIATION.md](REMEDIATION.md). Tick items there first.
+
 ## User-facing features (v1+)
 
 - ✅ Browser drag-and-drop upload with a real book — verified 2026-08-30 (4 real books, ~1.2GB, byte-exact; chunked upload, complete-rename, delete, 2-min auto-stop)
@@ -32,16 +35,12 @@ Status markers: ✅ done · 🔶 needs user hands-on test · ⬜ todo
 
 ## From the 2026-08-31 review (not yet fixed)
 
-- ⬜ Seeking while paused leaves the UI stale: `positionMs` only advances from the ticker, which runs only while playing — a chapter tap while paused shows the old position and highlights the old chapter until playback resumes (add `onPositionDiscontinuity`)
-- ⬜ `onMetadata`/`onTracksChanged` assign `chapters.value` unconditionally, including an empty list — a late metadata event can wipe the list `Mp4ChapterParser` produced; guard with `isNotEmpty()`
-- ⬜ `MainActivity` leaks its `MediaController` when the activity is destroyed before `buildAsync` completes (use `MediaController.releaseFuture`)
-- ⬜ The UI drives `ExoPlayer` directly through the `PlayerManager` singleton instead of through the `MediaController` it already builds; a service teardown while the UI is alive leaves the composition holding a released player
-- ⬜ Position is persisted every 5 s of playback — a full DataStore file rewrite each time, thousands per book; 20–30 s plus save-on-pause/seek is enough
-- ⬜ `POST_NOTIFICATIONS` is only requested from the Uploader screen, so media controls can be suppressed until the user happens to open it
-- ⬜ `android:allowBackup` defaults to true with gigabytes of audiobooks in `filesDir` — set it false or exclude `files/books`
-- ⬜ Exclude `org.fusesource.jansi` (dragged in by ktor-server-core): the watch APK currently ships Windows DLLs and macOS dylibs
-- ⬜ Wear-native UI gaps: plain `LazyColumn` instead of `ScalingLazyColumn`/`TransformingLazyColumn`, so **the rotating crown does not scroll** the library or chapter list; no `TimeText`; transport buttons are emoji with no `contentDescription`
-- ⬜ `PlayerPrefs.getLastBook` is never read — the last-played book is written on every play but never restored on launch
+All of it — plus the release/CI/Wear-UI work above — is sequenced with acceptance
+criteria in [REMEDIATION.md](REMEDIATION.md) (items R1–R37, five phases). Highlights:
+lint currently fails with 19 errors that share one root cause (R1), the crown does
+not scroll any list (R29), seeking while paused shows a stale position (R11), and
+the UI still drives ExoPlayer through a process-wide singleton instead of the
+MediaController it already builds (R20).
 
 ## Distribution / infra
 
