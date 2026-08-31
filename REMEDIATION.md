@@ -126,14 +126,14 @@ The single change that retires a whole class of bugs: **the UI drives ExoPlayer
 directly through a process-wide singleton instead of the `MediaController` the
 activity already builds.**
 
-- ⬜ **R20 — Route transport through `MediaController`.** UI → controller →
+- ✅ **R20 — Route transport through `MediaController`.** UI → controller →
   session → player, the shape Media3 is designed for. Survives service death,
   and `MainActivity`'s controller stops being a keep-alive stub.
-- ⬜ **R21 — Move chapter/sleep/error state out of the player object** into an
+- ✅ **R21 — Move chapter/sleep/error state out of the player object** into an
   app-scoped observable repository the service writes and the UI reads (they
   share a process, so this stays cheap). Alternative: session extras + custom
   commands — heavier, only needed if the UI ever moves out of process.
-- ⬜ **R22 — Delete the `PlayerManager` singleton and its `clear()` workaround.**
+- ✅ **R22 — Delete the `PlayerManager` singleton and its `clear()` workaround.**
   A service teardown while the UI is alive currently leaves the composition
   holding a released player; lint's `StaticFieldLeak` (R7) also disappears here.
 
@@ -166,16 +166,16 @@ regression as it appears, rather than designing around it.
 > **Decided 2026-08-31:** the recommendation stands — try R8-with-Ktor first
 > (timeboxed), fall back to the `ServerSocket` implementation.
 
-- ⬜ **R23 — `buildTypes { release { ... } }`** with `isMinifyEnabled`,
+- ✅ **R23 — `buildTypes { release { ... } }`** with `isMinifyEnabled`,
   `isShrinkResources`, and a signing config whose keystore path/passwords come
   from `~/.gradle/gradle.properties` (never the repo).
-- ⬜ **R24 — R8 keep rules** for whatever survives D1, then **[device]** verify a
+- ✅ **R24 — R8 keep rules** for whatever survives D1, then **[device]** verify a
   *release* build: playback, chapters, and the full upload flow.
-- ⬜ **R25 — Packaging excludes:** `org.fusesource.jansi` (and its natives),
+- ✅ **R25 — Packaging excludes:** `org.fusesource.jansi` (and its natives),
   redundant `META-INF` licence files; drop unused ktor modules if Ktor stays.
-- ⬜ **R26 — Gate the debug intent extras** (`--es autoplay`, `--es screen`,
+- ✅ **R26 — Gate the debug intent extras** (`--es autoplay`, `--es screen`,
   `--es uploader_start`) behind `BuildConfig.DEBUG`.
-- ⬜ **R27 — Gate `Log.d`** behind `BuildConfig.DEBUG` (a two-line wrapper), so
+- ✅ **R27 — Gate `Log.d`** behind `BuildConfig.DEBUG` (a two-line wrapper), so
   release builds stop compiling in the string concatenation.
 
 **Acceptance:** signed release APK installs on the watch, plays, uploads; APK
@@ -190,32 +190,60 @@ Confirmed available in the *already pinned* wear-compose 1.6.2 — no version bu
 `Modifier.rotaryScrollable` (foundation.rotary), `ScreenScaffold`/`AppScaffold`/
 `TimeText` (material3).
 
-- ⬜ **R28 — Replace the plain `LazyColumn`s** in Library and Chapters with
+- ✅ **R28 — Replace the plain `LazyColumn`s** in Library and Chapters with
   `TransformingLazyColumn` inside a `ScreenScaffold` (curved-edge scaling, scroll
   indicator).
-- ⬜ **R29 — Rotary input.** The crown/bezel does not scroll anything today. Wire
+- ✅ **R29 — Rotary input.** The crown/bezel does not scroll anything today. Wire
   `Modifier.rotaryScrollable` (or the list's built-in rotary support) to both
   lists. This is the most-felt gap on a real watch.
-- ⬜ **R30 — `contentDescription` on the ⏮/⏸/▶/⏭ buttons** — they are bare emoji
+- ✅ **R30 — `contentDescription` on the ⏮/⏸/▶/⏭ buttons** — they are bare emoji
   and unreadable to TalkBack.
-- ⬜ **R31 — Auto-scroll the chapter list to the current chapter** on open.
-- ⬜ **R32 — Move UI strings into `strings.xml`** (the file exists and holds only
+- ✅ **R31 — Auto-scroll the chapter list to the current chapter** on open.
+- ✅ **R32 — Move UI strings into `strings.xml`** (the file exists and holds only
   the app name).
-- ⬜ **R33 — Show progress % per book** in the library and the **current chapter
+- ✅ **R33 — Show progress % per book** in the library and the **current chapter
   title** on the now-playing screen (both are data the app already has).
-- ⬜ **R34 — Delete a book from the watch UI** (only possible over HTTP today).
-- ⬜ **R35 — `TimeText`** on the main screens.
+- ✅ **R34 — Delete a book from the watch UI** (only possible over HTTP today).
+- ✅ **R35 — `TimeText`** on the main screens.
 
 ---
 
 ## Phase 5 — distribution  ·  ~0.5 day + waiting
 
-- ⬜ **R36 — CI** (GitHub Actions or Woodpecker on Codeberg) running
+- ✅ **R36 — CI** (GitHub Actions or Woodpecker on Codeberg) running
   `assembleDebug`, `testDebugUnitTest` and `lintDebug` in an Android SDK
   container. The lint gate only becomes possible after Phase 0.
 - ⬜ **R37 — IzzyOnDroid** submission once Phase 3 produces a signed APK from a
   tagged release (no account fee; the middle step before F-Droid proper).
 - ⏸ Play Store — $25 + Wear review, only if sideloading ever stops being enough.
+
+---
+
+## On-device checklist (before closing R37 / calling this done)
+
+Everything above compiles, lints (0 errors) and passes 33 JVM tests; none of it
+has been *seen* running. Verify on the Pixel Watch 5 once, in this order:
+
+1. **Lock-screen continuation is still solid** — play a book, screen off, ~10 min;
+   screen on: still playing, position advanced, no "Released player" crash. This
+   is the Phase-2 refactor's main regression risk; the MediaController binding is
+   what promotes the FGS.
+2. **Transport round-trip** — play/pause/skip/±30s/speed chip and the system and
+   Bluetooth media buttons all still work (they now go through the controller).
+3. **Paused seek** — pause, tap a chapter; the position text and cyan highlight
+   must update immediately (R11).
+4. **Chapter list** — opens on the current chapter (R31), crown scrolls both
+   lists (R29), TimeText shows.
+5. **Long-press delete** — confirm dialog, file and position gone; deleting the
+   playing book stops playback cleanly (R34).
+6. **Library progress %** — appears once a book has played at all (R33).
+7. **The PIN upload flow** — browser end-to-end with the new PIN field (the
+   previous drag-and-drop verification predates the PIN, retry and streamed
+   writes).
+8. **Signed release APK** — install, play, chapters, upload. If Ktor misbehaves
+   under R8, D1's ServerSocket fallback is the plan.
+9. **Continue-listening** — cold start after playing a book lands on NowPlaying,
+   paused at the saved position (R17).
 
 ---
 

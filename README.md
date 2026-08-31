@@ -51,15 +51,23 @@ or launch with `--es autoplay <bookId>` to skip the UI.
 ## Build
 
 ```bash
-JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleDebug
-JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:testDebugUnitTest
+JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleDebug      # dev (42 MB, debug logging + hooks)
+JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleRelease    # signed release (~5 MB, R8-minified)
+JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:testDebugUnitTest  # 33 JVM tests
+JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:lintDebug          # gate: 0 errors, no baseline
 ```
 
 Unit tests cover `Mp4ChapterParser` against synthetic Nero/QuickTime files built
-in `app/src/test/.../Mp4Builder.kt` — no device or real audiobook needed.
+in `app/src/test/.../Mp4Builder.kt`, the uploader's full endpoint contract
+(`UploadServerTest`), and the name rules — no device or real audiobook needed.
+
+The release keystore lives in `~/.gradle/wearbook-release.jks` with its password in
+`~/.gradle/gradle.properties` (`wearbookReleaseStorePassword`) — neither is in the
+repo. CI (GitHub Actions) builds and tests on every push; tagged releases build a
+signed APK from repository secrets `WEARBOOK_STORE_B64` + `WEARBOOK_STORE_PASSWORD`.
 
 Stack: AGP 9.3.2 (built-in Kotlin), Compose for Wear OS 1.6.2, Media3 1.11.0,
-Ktor 3.3.3 (CIO), DataStore 1.2.1. minSdk 30 / targetSdk 37.
+Ktor 3.5.2 (CIO), DataStore 1.2.1, coroutines 1.11.0. minSdk 30 / targetSdk 37.
 
 Known quirk: Media3's MP4 chapter extraction does not fire on Wear OS 7, so
 chapters are parsed by `books/Mp4ChapterParser.kt` directly from the file.
