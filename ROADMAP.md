@@ -17,15 +17,23 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
 
 ## Open
 
-- 🔶 **Reinstall under the new application id.** The app is now `com.emre.aloud`
-  (was `com.emre.wearbook`), so the watch will not upgrade the old install in
-  place. Migrate the library or re-upload — see the note at the end of the
-  [README](README.md) — then uninstall the old package.
-- 🔶 **Prove the release workflow on a real tag.** It had never worked: the job
-  wrote the keystore password but never put a keystore on the runner, and no
-  repository secrets existed at all. `ALOUD_STORE_B64` / `ALOUD_STORE_PASSWORD`
-  are now set and the job decodes the keystore itself, but the first `v*` tag is
-  what actually proves it end to end.
+- ✅ **Running as `com.emre.aloud` on the watch** (2026-09-01): 20 books /
+  8.51 GB verified byte-exact against the source library, old `com.emre.wearbook`
+  package and its data removed.
+- ✅ **Release workflow proven** by tag `v0.1.0`. It had never worked before: the
+  job wrote the keystore password but never put a keystore on the runner, and no
+  repository secrets existed at all. It now decodes `ALOUD_STORE_B64`, runs only
+  after tests pass, and the attached APK was confirmed to carry the release
+  certificate (`5A:75:82:00…`).
+- ✅ **Uploader re-verified on the watch**: ten endpoint checks (PIN enforcement,
+  mandatory `total`, overshoot → 413, traversal → 400), a 3 MiB chunked upload
+  that came back sha256-identical, and DELETE cleanup.
+- ✅ **Crown/rotary scrolling, `TimeText`, chapter-list auto-follow** — confirmed
+  by hand on the Pixel Watch 5. Touch scrolling works too; only synthetic
+  `adb input swipe` fails to move the list, which is an adb artefact.
+- ✅ **Getting back to the player from the library.** The library used to be a
+  one-way trip; it now shows a `▶ <title>` row while a book is loaded, and
+  re-tapping the current book navigates instead of re-preparing it.
 - ✅ **Chapters verified on the Pixel Watch 5** (2026-09-01), both formats and
   both entry paths: M4B QuickTime `ch 1/17`, MP3 ID3 `CHAP` `ch 1/21`, chapter
   list renders, and a cold restart resumes at 18.6 s with the chapter list
@@ -52,10 +60,9 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
   chapters — an empty list there is correct, not a bug. Files that tag every
   chapter with the book's own name (e.g. 21× "Caffeine") are renumbered
   "Chapter N" rather than shown as-is.
-- 🔶 Re-verify browser drag-and-drop upload after the uploader changes (a declared
-  `total` is now mandatory, and `.part` files are reaped at server start).
-- 🔶 Crown/rotary scrolling, `TimeText`, chapter-list auto-follow — compile-verified
-  only; they need the physical crown.
+- ⬜ The browser upload page itself (the JS in `UploadServer.kt`) is still only
+  exercised by hand; the server contract underneath it is covered by tests and
+  was re-verified on the watch.
 - ⬜ Rate-limit wrong PINs per source address. Today any device on the LAN can
   stop the uploader with 20 wrong guesses — an unauthenticated denial of service.
   Also consider a `Host`-header check to defeat DNS rebinding.
