@@ -523,8 +523,8 @@ class PlayerManager(private val context: Context) {
 
     /**
      * Sorts, de-duplicates and names a chapter list. Plenty of files tag every
-     * chapter with the book's own name, or leave the title empty; twenty-one
-     * rows reading "Caffeine" say nothing on a 1.7-inch screen, so fall back to
+     * chapter with the book's own title, or leave the title empty; twenty-one
+     * identical rows say nothing on a 1.7-inch screen, so fall back to
      * numbering unless the titles actually tell the chapters apart.
      */
     private fun label(raw: List<Chapter>): List<Chapter> {

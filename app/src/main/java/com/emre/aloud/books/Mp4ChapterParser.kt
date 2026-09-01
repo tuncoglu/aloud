@@ -29,7 +29,7 @@ object Mp4ChapterParser {
             RandomAccessFile(file, "r").use { raf ->
                 val moov = findTopLevelBox(raf, "moov") ?: return emptyList()
                 // Some real-world muxers nest moov inside moov; unwrap before
-                // looking for udta/chapters (seen in Pollan m4b, 2026-08).
+                // looking for udta/chapters (seen in a retail m4b, 2026-08).
                 var moovChildren = boxChildren(raf, moov.payloadStart, moov.end)
                 while (moovChildren.size == 1 && moovChildren[0].type == "moov") {
                     moovChildren = boxChildren(raf, moovChildren[0].payloadStart, moovChildren[0].end)
@@ -237,7 +237,7 @@ object Mp4ChapterParser {
         // Sample data is located via the chunk offset table (stco/co64) plus
         // per-chunk sample counts (stsc). The old mdat-sequential heuristic
         // breaks whenever the text track isn't the first thing in mdat or
-        // padding precedes its chunks (seen in Pollan-style retail m4bs).
+        // padding precedes its chunks (seen in retail m4bs).
         val stsc = stblChildren.firstOrNull { it.type == "stsc" } ?: return null
         val stco = stblChildren.firstOrNull { it.type == "stco" }
             ?: stblChildren.firstOrNull { it.type == "co64" }

@@ -90,8 +90,8 @@ Use the `wear-device-testing` skill. The essentials:
 
 ## Library conventions
 
-Audiobooks live in `~/Audiobooks`, named **`<Author> - <Full Title>.<ext>`**, e.g.
-`James C. Scott - Against the Grain: A Deep History of the Earliest States.m4b`.
+Audiobooks live in `~/Audiobooks`, named **`<Author> - <Full Title>.<ext>`** —
+author first, then the full title including any subtitle.
 Tags follow `artist` = author and `title` = `album` = full title including
 subtitle; cover art embedded. Retag losslessly and confirm the audio is untouched:
 

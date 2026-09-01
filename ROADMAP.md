@@ -87,10 +87,9 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
   it is fast). Measured across the reference library: every count matches
   `ffprobe`, worst case 0.5 s.
 
-  Reference: `James C. Scott - Weapons of the Weak….m4b` genuinely has no
-  chapters — an empty list there is correct, not a bug. Files that tag every
-  chapter with the book's own name (e.g. 21× "Caffeine") are renumbered
-  "Chapter N" rather than shown as-is.
+  Note: some files genuinely have no chapters — an empty list there is
+  correct, not a bug. Files that tag every chapter with the book's own title are
+  renumbered "Chapter N" rather than shown as-is.
 - ⬜ The browser upload page itself (the JS in `UploadServer.kt`) is still only
   exercised by hand; the server contract underneath it is covered by tests and
   was re-verified on the watch.
