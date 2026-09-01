@@ -13,8 +13,6 @@ import androidx.media3.extractor.SeekMap
 import androidx.media3.extractor.TrackOutput
 import androidx.media3.extractor.metadata.Chapter as Media3Chapter
 import androidx.media3.extractor.mp3.Mp3Extractor
-import androidx.media3.extractor.mp4.Mp4Extractor
-import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import com.emre.aloud.playback.Chapter
 import com.emre.aloud.util.Logg
 import java.io.EOFException
@@ -24,15 +22,20 @@ import java.io.RandomAccessFile
 /**
  * Reads chapters straight from a file, independently of playback.
  *
- * The player publishes the same chapters through `Player.Listener`, but only
- * once it is actually *playing*: ExoPlayer will not drive the extractor past
- * the header while it sits paused, so a book opened at a saved position — the
- * normal case — came up with an empty chapter list. Seeking also makes
- * `Mp4Extractor` drop what it had already collected.
+ * Two reasons this does not simply use the player's own chapter callbacks:
  *
- * So the parsing is Media3's (verified to match ffmpeg chapter-for-chapter on a
- * shelf of real audiobooks); only the *driving* of it is ours, on an IO thread,
- * where nothing about the playback position can interfere.
+ *  - They only fire while the player is actually *playing*, and `Mp4Extractor`
+ *    discards what it collected on the first seek. A book opened paused at its
+ *    saved position — the normal case — therefore got nothing.
+ *  - Media3's MP4 extractor parses the whole audio sample table before it
+ *    publishes chapters. For a 1.3 GB / 23 h audiobook that is millions of
+ *    entries and took **over 4 minutes** on a Pixel Watch 5, versus 96 ms for
+ *    reading just the chapter boxes.
+ *
+ * So MP4/M4B goes through [Mp4ChapterParser], which reads only `chpl` and the
+ * chapter track — O(chapters) rather than O(audio samples). MP3 has no such
+ * table, so Media3's `Mp3Extractor` handles ID3 `CHAP` frames directly and
+ * finishes in milliseconds.
  */
 @OptIn(UnstableApi::class)
 object ChapterReader {
@@ -42,11 +45,16 @@ object ChapterReader {
 
     /** Blocking; call from [kotlinx.coroutines.Dispatchers.IO]. */
     fun read(file: File): List<Chapter> = try {
-        val extractor = if (file.extension.lowercase() == "mp3") {
-            Mp3Extractor()
-        } else {
-            Mp4Extractor(DefaultSubtitleParserFactory())
-        }
+        if (file.extension.lowercase() == "mp3") readId3(file)
+        else Mp4ChapterParser.parse(file).map { Chapter(it.startMs, it.endMs, it.title) }
+    } catch (e: Exception) {
+        Logg.d("chapter read failed for ${file.name}: $e")
+        emptyList()
+    }
+
+    /** ID3 `CHAP` frames, via Media3 — cheap, an MP3 has no sample table. */
+    private fun readId3(file: File): List<Chapter> {
+        val extractor = Mp3Extractor()
         val sink = FormatSink()
         extractor.init(sink)
         RandomAccessFile(file, "r").use { raf ->
@@ -65,10 +73,7 @@ object ChapterReader {
             }
         }
         extractor.release()
-        sink.chapters()
-    } catch (e: Exception) {
-        Logg.d("chapter read failed for ${file.name}: $e")
-        emptyList()
+        return sink.chapters()
     }
 
     private class RafReader(private val raf: RandomAccessFile) : DataReader {

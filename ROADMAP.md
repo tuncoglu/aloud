@@ -9,7 +9,7 @@ its history is in git. This file is the whole inventory now.
 
 | Gate | Command | State |
 | --- | --- | --- |
-| Unit tests | `./gradlew :app:testDebugUnitTest` | ✅ 18 passing |
+| Unit tests | `./gradlew :app:testDebugUnitTest` | ✅ 39 passing |
 | Static analysis | `./gradlew :app:lintDebug` | ✅ 0 errors, no baseline |
 | Release build | `./gradlew :app:assembleRelease` | ✅ signed, R8-minified |
 
@@ -40,15 +40,18 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
   `books/ChapterReader.kt`, which drives Media3's extractor over the file on an
   IO thread, independently of playback position.
 
+  A second on-device finding reversed the parser deletion outright. Media3's
+  MP4 extractor parses the whole audio sample table before publishing chapters:
+  **over 4 minutes** for a 1.3 GB / 23 h book on the watch, versus 0.3 s for
+  `Mp4ChapterParser`, which reads only `chpl` and the chapter track. The parser
+  is back for MP4/M4B; Media3 still handles MP3 ID3 `CHAP` (no sample table, so
+  it is fast). Measured on all 20 books: every count matches `ffprobe`, worst
+  case 0.5 s.
+
   Reference: `James C. Scott - Weapons of the Weak….m4b` genuinely has no
   chapters — an empty list there is correct, not a bug. Files that tag every
   chapter with the book's own name (e.g. 21× "Caffeine") are renumbered
   "Chapter N" rather than shown as-is.
-- ⬜ Speed up `ChapterReader` on large files. It takes ~4–10 s for a 152 MB M4B
-  on the watch (96 ms on a PC) because it reads until the first sample. Chapters
-  simply appear a few seconds late, but a 1.3 GB book may be slower still; worth
-  measuring and, if needed, stopping the read as soon as the chapter track has
-  been published.
 - 🔶 Re-verify browser drag-and-drop upload after the uploader changes (a declared
   `total` is now mandatory, and `.part` files are reaped at server start).
 - 🔶 Crown/rotary scrolling, `TimeText`, chapter-list auto-follow — compile-verified

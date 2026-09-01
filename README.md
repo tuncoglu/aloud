@@ -57,13 +57,14 @@ Dev-only alternatives: `adb push` to `/data/local/tmp` then
 ```bash
 JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleDebug      # dev (~42 MB, debug logging + hooks)
 JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleRelease    # signed release (~5 MB, R8-minified)
-JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:testDebugUnitTest  # 18 JVM tests
+JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:testDebugUnitTest  # 39 JVM tests
 JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:lintDebug          # gate: 0 errors, no baseline
 ```
 
-Unit tests cover the uploader's full endpoint contract (`UploadServerTest`: PIN
-enforcement, offset and size validation, chunked writes, `.part` reaping) and the
-library's name and media-id rules — no device or real audiobook needed.
+Unit tests cover `Mp4ChapterParser` against synthetic Nero/QuickTime files, the
+uploader's full endpoint contract (`UploadServerTest`: PIN enforcement, offset and
+size validation, chunked writes, `.part` reaping) and the library's name and
+media-id rules — no device or real audiobook needed.
 
 The release keystore lives in `~/.gradle/aloud-release.jks` with its password in
 `~/.gradle/gradle.properties` (`aloudReleaseStorePassword`) — neither is in the
@@ -75,22 +76,26 @@ Ktor 3.5.2 (CIO), DataStore 1.2.1, coroutines 1.11.0. minSdk 30 / targetSdk 37.
 
 ## Notes
 
-**Chapters** are read from the file by `books/ChapterReader.kt`, which drives
-Media3's own `Mp4Extractor`/`Mp3Extractor` over it on a background thread. The
-parsing is therefore Media3's — verified chapter-for-chapter against `ffprobe`
-across a shelf of real audiobooks — and only the *driving* of it is ours.
+**Chapters** are read from the file by `books/ChapterReader.kt` on a background
+thread, never from playback. Two things forced that design, both found only by
+testing on the watch:
 
-That indirection is not decoration. The player publishes the same chapters
-through `Player.Listener`, but only while it is actually playing, and
-`Mp4Extractor` discards them on the first seek. A book opened paused at its saved
-position — the normal case, and the app's default startup path — therefore came
-up with an empty chapter list. Reading the file directly is immune to both.
+1. The player *does* publish chapters through `Player.Listener`, but only while
+   it is actually playing, and `Mp4Extractor` discards them on the first seek. A
+   book opened paused at its saved position — the normal case, and the app's
+   default startup screen — got nothing.
+2. Media3's MP4 extractor parses the entire audio sample table before it
+   publishes chapters. For a 1.3 GB / 23 h audiobook that is millions of entries:
+   **over 4 minutes** on a Pixel Watch 5.
 
-An earlier version shipped a hand-written ISO-BMFF chapter parser, added because
-the *platform* `MediaParser` path in use at the time never delivered chapters.
-Media3's classic extractors have parsed both formats since 1.10.0, so the
-hand-written parsing is gone; what survived is the idea of reading chapters
-independently of playback.
+So MP4/M4B is parsed by `books/Mp4ChapterParser.kt`, which reads only the Nero
+`chpl` atom and the QuickTime chapter track — O(chapters) instead of O(audio
+samples), and 0.3 s for that same 1.3 GB book. MP3 has no sample table, so
+Media3's `Mp3Extractor` reads ID3 `CHAP` frames directly in well under a second.
+
+Both paths are checked against `ffprobe`: chapter counts match on all 20 books in
+the reference library, and the parser has 21 unit tests against synthetic
+Nero/QuickTime files built in `app/src/test/.../Mp4Builder.kt`.
 
 **The app was renamed** from WearBook/WearBite to Aloud, and its application id
 from `com.emre.wearbook` to `com.emre.aloud`. Android treats that as a different
