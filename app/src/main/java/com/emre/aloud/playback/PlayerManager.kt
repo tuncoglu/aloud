@@ -28,6 +28,7 @@ import androidx.media3.session.SessionResult
 import com.emre.aloud.MainActivity
 import com.emre.aloud.books.Book
 import com.emre.aloud.books.BooksRepository
+import com.emre.aloud.books.ChapterReader
 import com.emre.aloud.util.Logg
 import com.emre.aloud.data.PlayerPrefs
 import com.google.common.util.concurrent.ListenableFuture
@@ -42,6 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 
@@ -147,6 +149,7 @@ class PlayerManager(private val context: Context) {
         .build()
 
     private var positionJob: Job? = null
+    private var chapterJob: Job? = null
     private var sleepJob: Job? = null
     private var ticksSinceSave = 0
 
@@ -185,6 +188,8 @@ class PlayerManager(private val context: Context) {
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 Logg.d("onMediaItemTransition: ${mediaItem?.mediaId} reason=$reason")
+                chapterJob?.cancel()
+                chapterJob = null
                 PlaybackState.playbackError.value = null
                 PlaybackState.nowPlaying.value = mediaItem?.let {
                     BooksRepository.bookByName(context, it.mediaId)
@@ -272,6 +277,13 @@ class PlayerManager(private val context: Context) {
                 .build()
             player.setMediaItem(item, saved.coerceAtLeast(0))
             player.prepare()
+            // Started only after setMediaItem: onMediaItemTransition cancels
+            // chapterJob, so a read kicked off before this point would be
+            // cancelled by the very item it was reading for.
+            readChapters(book)
+            // Chapters are read off the file separately (see below), so there
+            // is no reason to prepare anywhere other than the resume position.
+            //
             // Wait for a real duration before deciding whether the book is
             // finished. Note the explicit `> 0` guard below: an unknown
             // duration is C.TIME_UNSET (Long.MIN_VALUE), and `it - 2_000`
@@ -287,6 +299,22 @@ class PlayerManager(private val context: Context) {
             }
             if (autoPlay) player.play()
             PlayerPrefs.setLastBook(context, book.id)
+        }
+    }
+
+    /**
+     * Chapters come from the file, not from playback. The player publishes the
+     * same data, but only while actually playing and only until the first seek,
+     * so a book opened paused at its saved position never got any.
+     */
+    private fun readChapters(book: Book) {
+        chapterJob?.cancel()
+        chapterJob = scope.launch {
+            val chapters = withContext(Dispatchers.IO) { ChapterReader.read(book.file) }
+            Logg.d("read ${chapters.size} chapters for '${book.id}'")
+            if (chapters.isNotEmpty() && player.currentMediaItem?.mediaId == book.id) {
+                PlaybackState.chapters.value = label(chapters)
+            }
         }
     }
 
@@ -353,28 +381,45 @@ class PlayerManager(private val context: Context) {
     }
 
     /**
-     * Chapters as Media3 extracts them: Nero `chpl` and QuickTime chapter
-     * tracks from MP4/M4B, ID3 `CHAP` frames from MP3. They ride the track
-     * Format's metadata, so [Player.Listener.onTracksChanged] is the path that
-     * fires for a local file; [Player.Listener.onMetadata] covers in-stream
-     * metadata that arrives later.
+     * Chapters as Media3 extracts them from the *playing* stream: Nero `chpl`
+     * and QuickTime chapter tracks from MP4/M4B, ID3 `CHAP` frames from MP3.
+     * This is a bonus path — it only delivers while the player is actually
+     * playing and only until the first seek, so [ChapterReader] is what the
+     * app really relies on. Kept because it costs nothing and fills the list a
+     * little sooner when a book is played from the start.
      */
-    private fun extractChapters(metadata: Metadata): List<Chapter> =
+    private fun extractChapters(metadata: Metadata): List<Chapter> = label(
         metadata.getEntriesOfType(Media3Chapter::class.java)
-            .mapIndexedNotNull { i, c ->
-                if (c.isHidden) null
-                else Chapter(
-                    startMs = c.startTimeMs,
-                    endMs = c.endTimeMs,
-                    title = c.title?.value ?: "Chapter ${i + 1}",
+            .filterNot { it.isHidden }
+            .map {
+                Chapter(
+                    startMs = it.startTimeMs,
+                    endMs = it.endTimeMs,
+                    title = it.title?.value?.trim().orEmpty(),
                 )
-            }
-            .sortedBy { it.startMs }
-            .distinctBy { it.startMs }
+            },
+    )
+
+    /**
+     * Sorts, de-duplicates and names a chapter list. Plenty of files tag every
+     * chapter with the book's own name, or leave the title empty; twenty-one
+     * rows reading "Caffeine" say nothing on a 1.7-inch screen, so fall back to
+     * numbering unless the titles actually tell the chapters apart.
+     */
+    private fun label(raw: List<Chapter>): List<Chapter> {
+        val chapters = raw.sortedBy { it.startMs }.distinctBy { it.startMs }
+        val titlesAreUseful = chapters.mapTo(HashSet()) { it.title }.size > 1
+        return chapters.mapIndexed { i, c ->
+            if (titlesAreUseful && c.title.isNotEmpty()) c
+            else c.copy(title = "Chapter ${i + 1}")
+        }
+    }
 
     fun release() {
         positionJob?.cancel()
         positionJob = null
+        chapterJob?.cancel()
+        chapterJob = null
         positionSnapshot()?.let { (bookId, posMs) ->
             runBlocking {
                 withTimeoutOrNull(500) { PlayerPrefs.setPos(context, bookId, posMs) }

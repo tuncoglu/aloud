@@ -75,11 +75,22 @@ Ktor 3.5.2 (CIO), DataStore 1.2.1, coroutines 1.11.0. minSdk 30 / targetSdk 37.
 
 ## Notes
 
-**Chapters** come from Media3's own extractors. An earlier version shipped a
-hand-written MP4 chapter parser because the *platform* `MediaParser` path used at
-the time never delivered them. Media3's classic extractors have parsed both
-chapter formats since 1.10.0, so the parser was removed once its output was
-confirmed identical across a shelf of real audiobooks.
+**Chapters** are read from the file by `books/ChapterReader.kt`, which drives
+Media3's own `Mp4Extractor`/`Mp3Extractor` over it on a background thread. The
+parsing is therefore Media3's — verified chapter-for-chapter against `ffprobe`
+across a shelf of real audiobooks — and only the *driving* of it is ours.
+
+That indirection is not decoration. The player publishes the same chapters
+through `Player.Listener`, but only while it is actually playing, and
+`Mp4Extractor` discards them on the first seek. A book opened paused at its saved
+position — the normal case, and the app's default startup path — therefore came
+up with an empty chapter list. Reading the file directly is immune to both.
+
+An earlier version shipped a hand-written ISO-BMFF chapter parser, added because
+the *platform* `MediaParser` path in use at the time never delivered chapters.
+Media3's classic extractors have parsed both formats since 1.10.0, so the
+hand-written parsing is gone; what survived is the idea of reading chapters
+independently of playback.
 
 **The app was renamed** from WearBook/WearBite to Aloud, and its application id
 from `com.emre.wearbook` to `com.emre.aloud`. Android treats that as a different

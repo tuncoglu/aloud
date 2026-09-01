@@ -26,12 +26,29 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
   repository secrets existed at all. `ALOUD_STORE_B64` / `ALOUD_STORE_PASSWORD`
   are now set and the job decodes the keystore itself, but the first `v*` tag is
   what actually proves it end to end.
-- 🔶 **Confirm chapters still appear on the watch.** The hand-written
-  `Mp4ChapterParser` was deleted in favour of Media3's own extractors, which
-  produced byte-identical chapters for all 10 real audiobooks on the dev machine
-  (same count, titles and start times). This is the one change a JVM test cannot
-  fully close: play one M4B and one chaptered MP3 on the watch and check the
-  chapter list. If it ever regresses, the parser is one `git revert` away.
+- ✅ **Chapters verified on the Pixel Watch 5** (2026-09-01), both formats and
+  both entry paths: M4B QuickTime `ch 1/17`, MP3 ID3 `CHAP` `ch 1/21`, chapter
+  list renders, and a cold restart resumes at 18.6 s with the chapter list
+  intact.
+
+  On-device testing earned its keep here. Deleting the hand-written parser in
+  favour of the player's own chapter callbacks looked airtight off-device, but
+  ExoPlayer only drives the extractor past the header **while playing**, and
+  `Mp4Extractor` drops chapters on the first seek. So every resume — and the
+  paused continue-listening startup, i.e. normal use — came up with no chapters.
+  Every JVM test read from byte zero and never saw it. Fixed by
+  `books/ChapterReader.kt`, which drives Media3's extractor over the file on an
+  IO thread, independently of playback position.
+
+  Reference: `James C. Scott - Weapons of the Weak….m4b` genuinely has no
+  chapters — an empty list there is correct, not a bug. Files that tag every
+  chapter with the book's own name (e.g. 21× "Caffeine") are renumbered
+  "Chapter N" rather than shown as-is.
+- ⬜ Speed up `ChapterReader` on large files. It takes ~4–10 s for a 152 MB M4B
+  on the watch (96 ms on a PC) because it reads until the first sample. Chapters
+  simply appear a few seconds late, but a 1.3 GB book may be slower still; worth
+  measuring and, if needed, stopping the read as soon as the chapter track has
+  been published.
 - 🔶 Re-verify browser drag-and-drop upload after the uploader changes (a declared
   `total` is now mandatory, and `.part` files are reaped at server start).
 - 🔶 Crown/rotary scrolling, `TimeText`, chapter-list auto-follow — compile-verified
