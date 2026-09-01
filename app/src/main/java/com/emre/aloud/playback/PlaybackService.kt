@@ -1,4 +1,4 @@
-package com.emre.wearbook.playback
+package com.emre.aloud.playback
 
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService

@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "wearbook"
+rootProject.name = "aloud"
 include(":app")

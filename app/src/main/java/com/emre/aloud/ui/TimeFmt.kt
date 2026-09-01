@@ -1,4 +1,4 @@
-package com.emre.wearbook.ui
+package com.emre.aloud.ui
 
 import java.util.Locale
 

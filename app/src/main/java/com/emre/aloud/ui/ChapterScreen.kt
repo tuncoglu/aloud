@@ -1,4 +1,4 @@
-package com.emre.wearbook.ui
+package com.emre.aloud.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -21,10 +21,10 @@ import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
-import com.emre.wearbook.R
-import com.emre.wearbook.playback.PlaybackState
-import com.emre.wearbook.playback.PlaybackUi
-import com.emre.wearbook.playback.chapterIndexAt
+import com.emre.aloud.R
+import com.emre.aloud.playback.PlaybackState
+import com.emre.aloud.playback.PlaybackUi
+import com.emre.aloud.playback.chapterIndexAt
 
 @Composable
 fun ChapterScreen(ui: PlaybackUi) {
@@ -55,7 +55,7 @@ fun ChapterScreen(ui: PlaybackUi) {
             rotaryScrollableBehavior = rotaryBehavior,
         ) {
             item { ListHeader { Text(stringResource(R.string.chapters_header)) } }
-            items(count = chapters.size, key = { chapters[it].startMs }) { i ->
+            items(count = chapters.size, key = { it }) { i ->
                 Text(
                     text = "${i + 1}. ${chapters[i].title}",
                     color = if (i == current) Color.Cyan else Color.Unspecified,

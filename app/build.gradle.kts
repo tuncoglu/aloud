@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.emre.wearbook"
+    namespace = "com.emre.aloud"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.emre.wearbook"
+        applicationId = "com.emre.aloud"
         minSdk = 30
         targetSdk = 37
         versionCode = 1
@@ -24,11 +24,11 @@ android {
     signingConfigs {
         create("release") {
             // The keystore lives in ~/.gradle, never in the repo; its password
-            // comes from ~/.gradle/gradle.properties (wearbookReleaseStorePassword).
-            storeFile = file(System.getProperty("user.home") + "/.gradle/wearbook-release.jks")
-            storePassword = (project.findProperty("wearbookReleaseStorePassword") as? String).orEmpty()
-            keyAlias = "wearbook"
-            keyPassword = (project.findProperty("wearbookReleaseStorePassword") as? String).orEmpty()
+            // comes from ~/.gradle/gradle.properties (aloudReleaseStorePassword).
+            storeFile = file(System.getProperty("user.home") + "/.gradle/aloud-release.jks")
+            storePassword = (project.findProperty("aloudReleaseStorePassword") as? String).orEmpty()
+            keyAlias = "aloud"
+            keyPassword = (project.findProperty("aloudReleaseStorePassword") as? String).orEmpty()
         }
     }
 

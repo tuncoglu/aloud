@@ -1,4 +1,4 @@
-package com.emre.wearbook.ui
+package com.emre.aloud.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -28,15 +28,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
-import com.emre.wearbook.R
+import com.emre.aloud.R
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import com.emre.wearbook.playback.PlaybackState
-import com.emre.wearbook.playback.PlaybackUi
-import com.emre.wearbook.playback.chapterIndexAt
+import com.emre.aloud.playback.PlaybackState
+import com.emre.aloud.playback.PlaybackUi
+import com.emre.aloud.playback.chapterIndexAt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 private val SPEED_OPTIONS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 private val SLEEP_OPTIONS = listOf(15, 30, 60, 120)
@@ -169,9 +170,13 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(onClick = {
-                val next = SPEED_OPTIONS[(SPEED_OPTIONS.indexOf(speed) + 1) % SPEED_OPTIONS.size]
+                // Match with a tolerance: a speed restored from DataStore need
+                // not be bit-identical to an option, and exact Float equality
+                // would return -1 and snap the user back to 0.75x.
+                val idx = SPEED_OPTIONS.indexOfFirst { kotlin.math.abs(it - speed) < 0.01f }
+                val next = SPEED_OPTIONS[(idx.coerceAtLeast(0) + 1) % SPEED_OPTIONS.size]
                 ui.setSpeed(next)
-            }) { Text("%.2f×".format(speed)) }
+            }) { Text(String.format(Locale.US, "%.2f×", speed)) }
 
             // Cycle from the armed option, not the shrunk remaining minutes:
             // 15 → 30 → 60 → 120 → off, mid-countdown included.

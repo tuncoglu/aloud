@@ -1,4 +1,4 @@
-# --- WearBite release keep rules ---
+# --- Aloud release keep rules ---
 # The following is shipped with the existing app; rule out anything the
 # shrinker cannot infer.
 

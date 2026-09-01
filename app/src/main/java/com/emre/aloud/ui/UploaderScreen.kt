@@ -1,4 +1,4 @@
-package com.emre.wearbook.ui
+package com.emre.aloud.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -15,11 +15,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
-import com.emre.wearbook.upload.UploadServer
-import com.emre.wearbook.upload.UploadServerService
+import com.emre.aloud.R
+import com.emre.aloud.upload.UploadServer
+import com.emre.aloud.upload.UploadServerService
 
 @Composable
 fun UploaderScreen() {
@@ -50,17 +52,18 @@ fun UploaderScreen() {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = if (running) "http://$ip:${UploadServerService.PORT}" else "Uploader off",
+            text = if (running) "http://$ip:${UploadServerService.PORT}"
+            else stringResource(R.string.uploader_off),
             textAlign = TextAlign.Center,
         )
         if (running) {
             Text(
-                text = "PIN ${pin ?: "…"}",
+                text = stringResource(R.string.uploader_pin, pin ?: "…"),
                 textAlign = TextAlign.Center,
             )
         }
         Button(
             onClick = { if (running) UploadServerService.stop(context) else ensurePermissionsAndStart() },
-        ) { Text(if (running) "Stop" else "Start") }
+        ) { Text(stringResource(if (running) R.string.action_stop else R.string.action_start)) }
     }
 }

@@ -1,4 +1,4 @@
-package com.emre.wearbook.ui
+package com.emre.aloud.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -31,10 +31,10 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
-import com.emre.wearbook.R
-import com.emre.wearbook.books.Book
-import com.emre.wearbook.books.BooksRepository
-import com.emre.wearbook.data.PlayerPrefs
+import com.emre.aloud.R
+import com.emre.aloud.books.Book
+import com.emre.aloud.books.BooksRepository
+import com.emre.aloud.data.PlayerPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

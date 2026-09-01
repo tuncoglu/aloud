@@ -1,4 +1,4 @@
-package com.emre.wearbook.data
+package com.emre.aloud.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey

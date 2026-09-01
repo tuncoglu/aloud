@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*" ]
   pull_request:
 
 jobs:
@@ -35,10 +36,14 @@ jobs:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-  # Builds a signed release when a tag is pushed and the signing secrets are
-  # configured (Repository secrets: WEARBOOK_STORE_PASSWORD).
+  # Builds a signed release when a tag is pushed. Needs two repository secrets:
+  #   ALOUD_STORE_B64       base64 of ~/.gradle/aloud-release.jks
+  #   ALOUD_STORE_PASSWORD  the keystore/key password
+  # Runners start with no keystore, so it has to be materialised here — writing
+  # only the password left assembleRelease looking for a file that never existed.
   release:
     if: startsWith(github.ref, 'refs/tags/')
+    needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -49,12 +54,20 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: android-actions/setup-android@v3
-      - name: Build signed release
-        run: |
-          echo "wearbookReleaseStorePassword=$WEARBOOK_STORE_PASSWORD" >> $HOME/.gradle/gradle.properties
-          ./gradlew :app:assembleRelease --console=plain
+      - name: Install signing key
         env:
-          WEARBOOK_STORE_PASSWORD: ${{ secrets.WEARBOOK_STORE_PASSWORD }}
+          ALOUD_STORE_B64: ${{ secrets.ALOUD_STORE_B64 }}
+          ALOUD_STORE_PASSWORD: ${{ secrets.ALOUD_STORE_PASSWORD }}
+        run: |
+          if [ -z "$ALOUD_STORE_B64" ] || [ -z "$ALOUD_STORE_PASSWORD" ]; then
+            echo "::error::ALOUD_STORE_B64 and ALOUD_STORE_PASSWORD must both be set."
+            exit 1
+          fi
+          mkdir -p "$HOME/.gradle"
+          printf '%s' "$ALOUD_STORE_B64" | base64 -d > "$HOME/.gradle/aloud-release.jks"
+          echo "aloudReleaseStorePassword=$ALOUD_STORE_PASSWORD" >> "$HOME/.gradle/gradle.properties"
+      - name: Build signed release
+        run: ./gradlew :app:assembleRelease --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: app-release

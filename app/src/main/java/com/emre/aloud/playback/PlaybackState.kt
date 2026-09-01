@@ -1,10 +1,19 @@
-package com.emre.wearbook.playback
+package com.emre.aloud.playback
 
 import android.os.Bundle
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
-import com.emre.wearbook.books.Book
+import com.emre.aloud.books.Book
 import kotlinx.coroutines.flow.MutableStateFlow
+
+/** One chapter of the current book, as extracted by Media3 (Nero `chpl`,
+ *  QuickTime chapter tracks and ID3 `CHAP` all land here). [endMs] is -1 when
+ *  the source did not provide one. */
+data class Chapter(val startMs: Long, val endMs: Long, val title: String)
+
+/** Index of the chapter containing [positionMs], or -1 before the first one. */
+fun List<Chapter>.chapterIndexAt(positionMs: Long): Int =
+    indexOfLast { it.startMs <= positionMs }
 
 /**
  * UI-facing playback state, written by PlayerManager (the service side) and
@@ -17,7 +26,7 @@ object PlaybackState {
     val positionMs = MutableStateFlow(0L)
     val durationMs = MutableStateFlow(0L)
     val speed = MutableStateFlow(1.0f)
-    val chapters = MutableStateFlow<List<ChapterUi>>(emptyList())
+    val chapters = MutableStateFlow<List<Chapter>>(emptyList())
     val sleepEndMs = MutableStateFlow<Long?>(null)
     /** Armed sleep-timer option (15/30/60/120), kept across re-arms and restarts. */
     val sleepMinutes = MutableStateFlow<Int?>(null)
@@ -25,6 +34,21 @@ object PlaybackState {
     val playbackError = MutableStateFlow<String?>(null)
     /** Extracted cover art (ID3 APIC / M4B covr) of the current book. */
     val artwork = MutableStateFlow<ByteArray?>(null)
+
+    /**
+     * Clears everything the service owns. Called when the player goes away, so
+     * a UI that outlives the service does not keep showing a book as playing
+     * while the restarted service actually has nothing loaded.
+     */
+    fun clear() {
+        nowPlaying.value = null
+        isPlaying.value = false
+        positionMs.value = 0L
+        durationMs.value = 0L
+        chapters.value = emptyList()
+        playbackError.value = null
+        artwork.value = null
+    }
 }
 
 /**

@@ -1,4 +1,4 @@
-package com.emre.wearbook.upload
+package com.emre.aloud.upload
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -7,7 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
-import com.emre.wearbook.R
+import com.emre.aloud.R
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -64,9 +64,9 @@ class UploadServerService : Service() {
     }
 
     companion object {
-        private const val ACTION_START = "com.emre.wearbook.upload.START"
-        private const val ACTION_STOP = "com.emre.wearbook.upload.STOP"
-        private const val CHANNEL_ID = "wearbook_uploads"
+        private const val ACTION_START = "com.emre.aloud.upload.START"
+        private const val ACTION_STOP = "com.emre.aloud.upload.STOP"
+        private const val CHANNEL_ID = "aloud_uploads"
         const val PORT = 8080
 
         val running = MutableStateFlow(false)

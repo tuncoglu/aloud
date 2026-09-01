@@ -1,4 +1,4 @@
-package com.emre.wearbook
+package com.emre.aloud
 
 import android.content.ComponentName
 import android.os.Bundle
@@ -8,8 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
-import com.emre.wearbook.playback.PlaybackService
-import com.emre.wearbook.ui.WearApp
+import com.emre.aloud.playback.PlaybackService
+import com.emre.aloud.ui.WearApp
 
 class MainActivity : ComponentActivity() {
 

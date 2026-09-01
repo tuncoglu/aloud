@@ -1,10 +1,10 @@
-package com.emre.wearbook.upload
+package com.emre.aloud.upload
 
 import android.content.Context
 import android.os.storage.StorageManager
-import com.emre.wearbook.books.Book
-import com.emre.wearbook.books.BooksRepository
-import com.emre.wearbook.data.PlayerPrefs
+import com.emre.aloud.books.Book
+import com.emre.aloud.books.BooksRepository
+import com.emre.aloud.data.PlayerPrefs
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -33,6 +33,7 @@ import java.io.RandomAccessFile
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The parts of the uploader that touch Android, behind an interface so the
@@ -44,7 +45,7 @@ private const val MAX_CHUNK_BYTES = 4L * 1024 * 1024
 private const val FREE_SPACE_MARGIN = 32L * 1024 * 1024
 private const val IDLE_TIMEOUT_MS = 2 * 60_000L
 private const val MAX_BAD_PINS = 20
-private const val MAX_NAME_LENGTH = 180
+private const val MAX_NAME_BYTES = 200
 
 interface UploadStore {
     val dir: File
@@ -76,7 +77,7 @@ class AndroidUploadStore(private val appContext: Context) : UploadStore {
  *  tests can drive the routes directly). */
 internal class UploadState {
     @Volatile var lastActivityMs = System.currentTimeMillis()
-    @Volatile var badPins = 0
+    val badPins = AtomicInteger(0)
 }
 
 /**
@@ -111,6 +112,7 @@ class UploadServer(
 
     fun start(port: Int) {
         if (server != null) return
+        reapPartials(store.dir)
         server = embeddedServer(CIO, port = port, host = "0.0.0.0") {
             uploadRoutes(store, state, pin, onAutoStop)
         }.start(wait = false)
@@ -162,6 +164,17 @@ class UploadServer(
     }
 }
 
+/**
+ * Drops abandoned partial uploads. Only one server runs at a time, so any
+ * `.part` left on disk at start-up is debris from a transfer that died — a
+ * browser tab closed mid-upload never reaches the client's own cleanup call,
+ * and nothing else ever reaps them.
+ */
+internal fun reapPartials(dir: File) {
+    dir.listFiles { f -> f.isFile && f.name.endsWith(BooksRepository.PART_SUFFIX) }
+        ?.forEach { it.delete() }
+}
+
 /** The routes, as a standalone module so the tests can mount them with a fake
  *  [UploadStore] through testApplication. */
 internal fun Application.uploadRoutes(
@@ -182,6 +195,13 @@ internal fun Application.uploadRoutes(
             val offset = call.request.queryParameters["offset"]?.toLongOrNull() ?: 0L
             val total = call.request.queryParameters["total"]?.toLongOrNull() ?: -1L
 
+            // Every upload must declare its size. Without this an omitted
+            // `total` skipped the free-space check below and let a caller
+            // append 4 MiB chunks to a .part forever, filling the watch.
+            if (total <= 0) {
+                return@post fail("missing total", HttpStatusCode.BadRequest)
+            }
+
             // A chunk is bounded: the body streams to disk instead of being
             // buffered whole, and an oversized one is refused before it can
             // exhaust a watch's RAM.
@@ -197,15 +217,19 @@ internal fun Application.uploadRoutes(
             if (offset < 0 || offset > part.length()) {
                 return@post fail("bad offset", HttpStatusCode.BadRequest)
             }
-            if (total in 1..offset) {
+            if (offset >= total) {
                 return@post fail("offset past total", HttpStatusCode.BadRequest)
             }
-            if (offset == 0L && total > 0 && store.freeBytes() < total + FREE_SPACE_MARGIN) {
+            if (offset == 0L && store.freeBytes() < total + FREE_SPACE_MARGIN) {
                 return@post fail("not enough free space", HttpStatusCode.InsufficientStorage)
             }
 
             val written = withContext(Dispatchers.IO) {
-                RandomAccessFile(part, "rw").use { raf ->
+                // Labelled on purpose: with two nested `use` blocks a bare
+                // `return@use` binds to the INNER one, so the over-size signal
+                // was swallowed and an unbounded chunk answered 200 with
+                // received=0 instead of 413.
+                RandomAccessFile(part, "rw").use raf@{ raf ->
                     raf.seek(offset)
                     val buf = ByteArray(64 * 1024)
                     var n = 0L
@@ -213,7 +237,10 @@ internal fun Application.uploadRoutes(
                         while (true) {
                             val read = input.read(buf)
                             if (read <= 0) break
-                            if (n + read > MAX_CHUNK_BYTES) return@use -1L
+                            // Never let a .part grow past its declared size.
+                            if (n + read > MAX_CHUNK_BYTES || offset + n + read > total) {
+                                return@raf -1L
+                            }
                             raf.write(buf, 0, read)
                             n += read
                         }
@@ -225,7 +252,7 @@ internal fun Application.uploadRoutes(
 
             state.lastActivityMs = System.currentTimeMillis()
             val received = offset + written
-            if (total > 0 && received >= total && written > 0) {
+            if (received >= total && written > 0) {
                 // An abandoned .part left over from a longer previous
                 // upload would otherwise survive as trailing garbage.
                 if (part.length() > total) {
@@ -285,20 +312,25 @@ internal fun Application.uploadRoutes(
  * Rejects the call unless the PIN matches. A wrong PIN deliberately does NOT
  * count as activity, so a brute-forcer cannot hold the 2-minute idle stop
  * open; [MAX_BAD_PINS] wrong guesses shut the server down outright.
+ *
+ * A plain comparison is deliberate. The guess budget is 20 against a 10^6
+ * space, and the PIN is printed on the watch screen and in its notification —
+ * a timing side channel is orders of magnitude below WiFi jitter and is not
+ * the way this PIN gets discovered.
  */
 private suspend fun RoutingContext.authorize(
     state: UploadState,
     pin: String,
     onAutoStop: () -> Unit,
 ): Boolean {
-    if (constantTimeEquals(call.request.queryParameters["pin"].orEmpty(), pin)) return true
-    state.badPins++
+    if (call.request.queryParameters["pin"].orEmpty() == pin) return true
+    val bad = state.badPins.incrementAndGet()
     call.respondText(
         "{\"error\":\"bad pin\"}",
         ContentType.Application.Json,
         HttpStatusCode.Unauthorized,
     )
-    if (state.badPins >= MAX_BAD_PINS) {
+    if (bad == MAX_BAD_PINS) {
         // let the 401 flush before the engine goes down
         lockoutScope.launch {
             delay(250)
@@ -312,13 +344,6 @@ private suspend fun RoutingContext.fail(message: String, status: HttpStatusCode)
     call.respondText("{\"error\":\"$message\"}", ContentType.Application.Json, status)
 }
 
-private fun constantTimeEquals(a: String, b: String): Boolean {
-    if (b.isEmpty()) return false
-    var diff = a.length xor b.length
-    for (i in a.indices) diff = diff or (a[i].code xor b[i % b.length].code)
-    return diff == 0
-}
-
 /**
  * Names are *rejected*, not stripped: silently deleting characters turned
  * "Björn.m4b" into "Bjrn.m4b" and could collide two books onto one file.
@@ -327,7 +352,10 @@ private fun constantTimeEquals(a: String, b: String): Boolean {
  */
 private fun sanitizeName(raw: String?): String? {
     val name = raw?.trim().orEmpty()
-    if (name.isEmpty() || name.length > MAX_NAME_LENGTH) return null
+    if (name.isEmpty()) return null
+    // ext4 caps a file name at 255 *bytes*, so a limit in UTF-16 chars would
+    // let 180 emoji through and fail the open with ENAMETOOLONG.
+    if (name.toByteArray(Charsets.UTF_8).size > MAX_NAME_BYTES) return null
     if (name.startsWith(".") || name.contains("..")) return null
     if (name.any { it == '/' || it == '\\' || it == '"' || it.code < 0x20 || it.code == 0x7F }) return null
     if (name.endsWith(BooksRepository.PART_SUFFIX)) return null
@@ -337,9 +365,9 @@ private fun sanitizeName(raw: String?): String? {
 
 private val UPLOADER_HTML = """
 <!doctype html>
-<html><head><meta charset="utf-8"><title>WearBite upload</title></head>
+<html><head><meta charset="utf-8"><title>Aloud upload</title></head>
 <body style="font-family:sans-serif;max-width:40rem;margin:2rem auto">
-<h2>WearBite &mdash; add audiobooks</h2>
+<h2>Aloud &mdash; add audiobooks</h2>
 <p><label>PIN from watch: <input id="pin" inputmode="numeric" size="8" autocomplete="off"></label></p>
 <input type="file" id="f" multiple>
 <ul id="s"></ul>

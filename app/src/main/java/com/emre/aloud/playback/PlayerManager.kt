@@ -1,4 +1,4 @@
-package com.emre.wearbook.playback
+package com.emre.aloud.playback
 
 import android.app.PendingIntent
 import android.content.Context
@@ -20,22 +20,19 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.extractor.metadata.Chapter
+import androidx.media3.extractor.metadata.Chapter as Media3Chapter
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
-import com.emre.wearbook.MainActivity
-import com.emre.wearbook.books.Book
-import com.emre.wearbook.books.BooksRepository
-import com.emre.wearbook.books.Mp4ChapterParser
-import com.emre.wearbook.util.Logg
-import com.emre.wearbook.data.PlayerPrefs
+import com.emre.aloud.MainActivity
+import com.emre.aloud.books.Book
+import com.emre.aloud.books.BooksRepository
+import com.emre.aloud.util.Logg
+import com.emre.aloud.data.PlayerPrefs
 import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,23 +41,15 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
 
-typealias ChapterUi = Mp4ChapterParser.Chapter
-
-/** Index of the chapter containing [positionMs], or -1 before the first chapter. */
-fun List<ChapterUi>.chapterIndexAt(positionMs: Long): Int =
-    indexOfLast { it.startMs <= positionMs }
-
 /** Session custom-command names and args, shared by the UI (MediaController)
  *  and the service (PlayerManager). */
 object PlaybackCommand {
-    const val PLAY_BOOK = "wearbite.play_book"
-    const val SET_SLEEP = "wearbite.sleep"
+    const val PLAY_BOOK = "aloud.play_book"
+    const val SET_SLEEP = "aloud.sleep"
     const val ARG_MEDIA_ID = "mediaId"
     const val ARG_AUTOPLAY = "autoplay"
     const val ARG_MINUTES = "minutes"
@@ -158,11 +147,8 @@ class PlayerManager(private val context: Context) {
         .build()
 
     private var positionJob: Job? = null
-    private var chapterJob: Job? = null
     private var sleepJob: Job? = null
     private var ticksSinceSave = 0
-
-    private val chapterCache = ConcurrentHashMap<String, List<ChapterUi>>()
 
     init {
         scope.launch {
@@ -199,8 +185,6 @@ class PlayerManager(private val context: Context) {
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 Logg.d("onMediaItemTransition: ${mediaItem?.mediaId} reason=$reason")
-                chapterJob?.cancel()
-                chapterJob = null
                 PlaybackState.playbackError.value = null
                 PlaybackState.nowPlaying.value = mediaItem?.let {
                     BooksRepository.bookByName(context, it.mediaId)
@@ -272,6 +256,7 @@ class PlayerManager(private val context: Context) {
     private fun applyBook(book: Book, autoPlay: Boolean) {
         savePositionNow()
         PlaybackState.playbackError.value = null
+        ticksSinceSave = 0
         scope.launch {
             val saved = PlayerPrefs.getPos(context, book.id)
             Logg.d("applyBook '${book.id}' resume at $saved ms (play: $autoPlay)")
@@ -287,31 +272,21 @@ class PlayerManager(private val context: Context) {
                 .build()
             player.setMediaItem(item, saved.coerceAtLeast(0))
             player.prepare()
-            withTimeoutOrNull(5_000) {
+            // Wait for a real duration before deciding whether the book is
+            // finished. Note the explicit `> 0` guard below: an unknown
+            // duration is C.TIME_UNSET (Long.MIN_VALUE), and `it - 2_000`
+            // would then wrap to a huge positive and skip the restart.
+            val duration = withTimeoutOrNull(5_000) {
                 while (player.duration <= 0) delay(100)
-            }
-            if (saved > 0 && player.duration > 0 && saved >= player.duration - 2_000) {
+                player.duration
+            } ?: 0L
+            if (saved > 0 && duration > 0 && saved >= duration - 2_000) {
                 Logg.d("book was finished, restarting from 0")
                 player.seekTo(0)
+                PlayerPrefs.setPos(context, book.id, 0)
             }
             if (autoPlay) player.play()
             PlayerPrefs.setLastBook(context, book.id)
-
-            if (book.file.extension.lowercase() == "m4b") {
-                chapterJob?.cancel()
-                chapterJob = scope.launch {
-                    val parsed = withContext(Dispatchers.IO) {
-                        val key = "${book.id}|${book.file.length()}|${book.file.lastModified()}"
-                        chapterCache[key] ?: Mp4ChapterParser.parse(book.file)
-                            .also { chapterCache[key] = it }
-                    }
-                    Logg.d("Mp4ChapterParser: ${parsed.size} chapters: " +
-                        parsed.take(3).joinToString { "${it.startMs}ms '${it.title}'" })
-                    if (parsed.isNotEmpty() && player.currentMediaItem?.mediaId == book.id) {
-                        PlaybackState.chapters.value = parsed
-                    }
-                }
-            }
         }
     }
 
@@ -352,6 +327,10 @@ class PlayerManager(private val context: Context) {
 
     private fun positionSnapshot(): Pair<String, Long>? {
         val id = player.currentMediaItem?.mediaId ?: return null
+        // Deliberately ignores 0: a transient 0 during load/stop must never
+        // overwrite a real resume position. The one case where 0 is the true
+        // position — a finished book restarted from the start — is persisted
+        // explicitly in applyBook instead.
         val pos = player.currentPosition
         return if (pos > 0) id to pos else null
     }
@@ -373,23 +352,29 @@ class PlayerManager(private val context: Context) {
         }
     }
 
-    private fun extractChapters(metadata: Metadata): List<ChapterUi> {
-        val chapters: List<Chapter> = metadata.getEntriesOfType(Chapter::class.java).toList()
-        return chapters.mapIndexedNotNull { i, c ->
-            if (c.isHidden) null
-            else ChapterUi(
-                startMs = c.startTimeMs,
-                endMs = c.endTimeMs,
-                title = c.title?.value ?: "Chapter ${i + 1}",
-            )
-        }
-    }
+    /**
+     * Chapters as Media3 extracts them: Nero `chpl` and QuickTime chapter
+     * tracks from MP4/M4B, ID3 `CHAP` frames from MP3. They ride the track
+     * Format's metadata, so [Player.Listener.onTracksChanged] is the path that
+     * fires for a local file; [Player.Listener.onMetadata] covers in-stream
+     * metadata that arrives later.
+     */
+    private fun extractChapters(metadata: Metadata): List<Chapter> =
+        metadata.getEntriesOfType(Media3Chapter::class.java)
+            .mapIndexedNotNull { i, c ->
+                if (c.isHidden) null
+                else Chapter(
+                    startMs = c.startTimeMs,
+                    endMs = c.endTimeMs,
+                    title = c.title?.value ?: "Chapter ${i + 1}",
+                )
+            }
+            .sortedBy { it.startMs }
+            .distinctBy { it.startMs }
 
     fun release() {
         positionJob?.cancel()
         positionJob = null
-        chapterJob?.cancel()
-        chapterJob = null
         positionSnapshot()?.let { (bookId, posMs) ->
             runBlocking {
                 withTimeoutOrNull(500) { PlayerPrefs.setPos(context, bookId, posMs) }
@@ -398,6 +383,9 @@ class PlayerManager(private val context: Context) {
         player.release()
         session.release()
         scope.cancel()
+        // The UI can outlive the service; without this it keeps rendering the
+        // old book as playing while a restarted service has nothing loaded.
+        PlaybackState.clear()
     }
 }
 

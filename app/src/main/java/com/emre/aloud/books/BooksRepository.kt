@@ -1,4 +1,4 @@
-package com.emre.wearbook.books
+package com.emre.aloud.books
 
 import android.content.Context
 import java.io.File
@@ -25,6 +25,15 @@ object BooksRepository {
     fun isSupportedName(name: String): Boolean =
         name.substringAfterLast('.', "").lowercase() in EXTENSIONS
 
+    /**
+     * True when [id] names a file directly inside the books directory. Media
+     * ids arrive from outside — a MediaSession custom command any app on the
+     * watch can send, and the debug `--es autoplay` extra — so anything
+     * carrying a path component is refused rather than normalised.
+     */
+    fun isSafeId(id: String): Boolean =
+        id.isNotEmpty() && id == File(id).name && !id.startsWith(".")
+
     fun booksDir(context: Context): File =
         File(context.filesDir, BOOKS_DIR).apply { mkdirs() }
 
@@ -35,8 +44,13 @@ object BooksRepository {
             .map { Book(id = it.name, title = it.nameWithoutExtension, file = it) }
             .sortedBy { it.title.lowercase() }
 
-    /** Media ids are file names, so a name lookup needs no directory scan. */
+    /**
+     * Media ids are file names, so a name lookup needs no directory scan — but
+     * the id is untrusted, so it must not be able to escape the books
+     * directory. See [isSafeId].
+     */
     fun bookByName(context: Context, id: String): Book? {
+        if (!isSafeId(id)) return null
         val f = File(booksDir(context), id)
         if (!f.isFile || !isSupportedName(f.name)) return null
         return Book(id = f.name, title = f.nameWithoutExtension, file = f)

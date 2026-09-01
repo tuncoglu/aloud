@@ -1,6 +1,6 @@
-package com.emre.wearbook.upload
+package com.emre.aloud.upload
 
-import com.emre.wearbook.books.Book
+import com.emre.aloud.books.Book
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -163,5 +163,53 @@ class UploadServerTest {
         assertTrue(File(store.dir, "book.m4b").exists())
         assertFalse(File(store.dir, "book.m4b.part").exists())
         assertTrue(store.deletedPositions.isEmpty())
+    }
+
+    /** Without a declared total the free-space check was skipped entirely and
+     *  a caller could append chunks to a .part until the watch filled up. */
+    @Test
+    fun `an upload without a declared total is refused`() = withServer(newStore()) { _, store ->
+        for (query in listOf("", "&total=0", "&total=-1", "&total=abc")) {
+            val r = client.post("/book?name=book.m4b&pin=$pin&offset=0$query") {
+                setBody(ByteArray(4))
+            }
+            assertEquals("total '$query'", HttpStatusCode.BadRequest, r.status)
+        }
+        assertFalse(File(store.dir, "book.m4b.part").exists())
+    }
+
+    /** A chunk may never push the .part past the size it declared. */
+    @Test
+    fun `a chunk overshooting the declared total is refused`() = withServer(newStore()) { _, store ->
+        val r = client.post("/book?name=book.m4b&pin=$pin&offset=0&total=4") {
+            setBody(ByteArray(64))
+        }
+        assertEquals(HttpStatusCode.PayloadTooLarge, r.status)
+        assertFalse(File(store.dir, "book.m4b").exists())
+    }
+
+    /** A tab closed mid-upload never calls DELETE /part, so nothing else
+     *  would ever remove the debris. */
+    @Test
+    fun `starting a server reaps abandoned partial uploads`() {
+        val store = newStore()
+        File(store.dir, "good.m4b").writeBytes(ByteArray(8))
+        File(store.dir, "abandoned.m4b.part").writeBytes(ByteArray(4))
+        File(store.dir, "another.mp3.part").writeBytes(ByteArray(4))
+
+        reapPartials(store.dir)
+
+        assertTrue(File(store.dir, "good.m4b").exists())
+        assertFalse(File(store.dir, "abandoned.m4b.part").exists())
+        assertFalse(File(store.dir, "another.mp3.part").exists())
+    }
+
+    /** ext4 caps a name at 255 bytes; a char-based limit let 180 multi-byte
+     *  characters through and the file open then failed with ENAMETOOLONG. */
+    @Test
+    fun `an over-long multibyte name is refused`() = withServer(newStore()) { _, _ ->
+        val name = "ä".repeat(150) + ".m4b" // 300+ bytes, only 154 chars
+        val r = client.post("/book?name=$name&pin=$pin&offset=0&total=10") { setBody(ByteArray(1)) }
+        assertEquals(HttpStatusCode.BadRequest, r.status)
     }
 }
