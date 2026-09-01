@@ -17,8 +17,39 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
 
 ## Open
 
-- ✅ **Running as `com.emre.aloud` on the watch** (2026-09-01): 20 books /
-  8.51 GB verified byte-exact against the source library, old `com.emre.wearbook`
+- 🔶 **First real listening session, 2026-09-01 evening.** Three problems
+  reported from an actual run with Pixel Buds Pro:
+
+  | Reported | Status |
+  | --- | --- |
+  | A phone notification to the headset stopped playback entirely, no resume | ✅ fixed |
+  | Playback overlapped watch/phone announcements | 🔶 partly — see below |
+  | A watch health announcement did not pause the book | ⬜ may not be fixable |
+
+  The cause of the first was a dead audio route: the only trace left behind was
+  `state=ERROR(7) … error=Bluetooth audio disconnected` in `dumpsys
+  media_session`. `handleAudioBecomingNoisy` was never set, `onPlayerError` only
+  recorded the failure and never re-prepared, and release builds logged nothing
+  at all. All three are fixed, and warnings now survive into release builds
+  (`adb logcat -s Aloud:W`).
+
+  Verified on the watch, both directions: playing when the route drops resumes by
+  itself (1:06:37 → 1:06:51); a book the listener paused stays paused
+  (1:06:57 → 1:06:57).
+
+  **Not proven:** the exact reported case. Testing used a full Bluetooth
+  disconnect, not a phone notification briefly seizing the headset — the same
+  class of event, handled generically, but it cannot be driven from adb. The next
+  run is the test.
+
+  **Possibly not fixable:** a watch announcement that plays *without requesting
+  audio focus* is invisible to the player. Audio focus itself is configured
+  correctly — Media3 requests it and, because the content type is `SPEECH`,
+  pauses rather than ducks.
+- ⬜ **Nobody has yet listened for an hour uninterrupted.** Battery cost over a
+  run is also unmeasured.
+- ✅ **Running as `com.emre.aloud` on the watch** (2026-09-01): 21 books /
+  8.80 GB verified byte-exact against the source library, old `com.emre.wearbook`
   package and its data removed.
 - ✅ **Release workflow proven** by tag `v0.1.0`. It had never worked before: the
   job wrote the keystore password but never put a keystore on the runner, and no
@@ -53,8 +84,8 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
   **over 4 minutes** for a 1.3 GB / 23 h book on the watch, versus 0.3 s for
   `Mp4ChapterParser`, which reads only `chpl` and the chapter track. The parser
   is back for MP4/M4B; Media3 still handles MP3 ID3 `CHAP` (no sample table, so
-  it is fast). Measured on all 20 books: every count matches `ffprobe`, worst
-  case 0.5 s.
+  it is fast). Measured across the reference library: every count matches
+  `ffprobe`, worst case 0.5 s.
 
   Reference: `James C. Scott - Weapons of the Weak….m4b` genuinely has no
   chapters — an empty list there is correct, not a bug. Files that tag every

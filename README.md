@@ -22,6 +22,9 @@ require a self-hosted server.
 - Finished books restart from the beginning instead of hanging at the end
 - Foreground media service: keeps playing with the screen off or locked, and the
   system media controls and Bluetooth buttons work
+- Rides out Bluetooth interruptions: pauses when the headset drops instead of
+  playing on into nothing, and starts again by itself when it comes back. A pause
+  you asked for stays paused
 - Built-in upload page, PIN-protected: a 6-digit code shown on the watch is
   required for every upload, listing and delete
 
@@ -76,6 +79,16 @@ Ktor 3.5.2 (CIO), DataStore 1.2.1, coroutines 1.11.0. minSdk 30 / targetSdk 37.
 
 ## Notes
 
+**Bluetooth interruptions.** A phone notification seizing the headset, or the
+headset dropping and returning, changes the audio route underneath the player.
+Left alone that surfaces as an `AUDIO_TRACK_*` failure and ExoPlayer stops for
+good — a run ends with the book silent and the position lost. Aloud sets
+`handleAudioBecomingNoisy` so the route going away pauses cleanly, watches for a
+usable output returning through an `AudioDeviceCallback`, and resumes from the
+same position. Auto-resume is armed only by a becoming-noisy pause, so a pause
+you asked for is never undone, and only headset-type outputs count — a dropped
+headset will not restart the book out loud on your wrist.
+
 **Chapters** are read from the file by `books/ChapterReader.kt` on a background
 thread, never from playback. Two things forced that design, both found only by
 testing on the watch:
@@ -93,8 +106,8 @@ So MP4/M4B is parsed by `books/Mp4ChapterParser.kt`, which reads only the Nero
 samples), and 0.3 s for that same 1.3 GB book. MP3 has no sample table, so
 Media3's `Mp3Extractor` reads ID3 `CHAP` frames directly in well under a second.
 
-Both paths are checked against `ffprobe`: chapter counts match on all 20 books in
-the reference library, and the parser has 21 unit tests against synthetic
+Both paths are checked against `ffprobe`: chapter counts match across the whole
+reference library, and the parser has 21 unit tests against synthetic
 Nero/QuickTime files built in `app/src/test/.../Mp4Builder.kt`.
 
 **The app was renamed** from WearBook/WearBite to Aloud, and its application id
