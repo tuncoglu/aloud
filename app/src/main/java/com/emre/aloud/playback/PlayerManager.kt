@@ -3,6 +3,11 @@ package com.emre.aloud.playback
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
@@ -158,6 +163,40 @@ class PlayerManager(private val context: Context) {
     private var ticksSinceSave = 0
     private var recoveryAttempts = 0
 
+    /**
+     * True only while playback is paused *because the audio route disappeared* —
+     * never because the listener pressed pause. Auto-resume keys off this, so
+     * reconnecting a headset after a deliberate pause stays silent.
+     */
+    private var pausedByRouteLoss = false
+
+    /**
+     * Whether the player was actually playing. ExoPlayer reports a
+     * becoming-noisy pause even for a book that was ALREADY paused, so without
+     * this a route blip would arm auto-resume on a book the listener had
+     * deliberately stopped - and reconnecting a headset later would start it.
+     */
+    private var wasPlaying = false
+
+    private val audioManager = context.getSystemService(AudioManager::class.java)
+
+    /**
+     * Puts the book back on when the headset returns. A phone notification
+     * seizing the Bluetooth route looks like the route vanishing and returning
+     * moments later; without this the book stays paused until the listener
+     * reaches for the watch, which is the interruption worth avoiding on a run.
+     */
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+            if (!pausedByRouteLoss) return
+            val usable = addedDevices?.any { it.isSink && it.type in RESUMABLE_OUTPUTS } == true
+            if (!usable) return
+            pausedByRouteLoss = false
+            Logg.w("audio route restored, resuming at ${player.currentPosition} ms")
+            player.play()
+        }
+    }
+
     private companion object {
         /** A changing Bluetooth route surfaces as one of these. */
         val RECOVERABLE_ERROR_CODES = setOf(
@@ -166,11 +205,24 @@ class PlayerManager(private val context: Context) {
             PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED,
             PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED,
         )
+
+        /** Outputs worth resuming into. The watch speaker is deliberately absent:
+         *  a headset dropping should not restart the book out loud on the wrist. */
+        val RESUMABLE_OUTPUTS = setOf(
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+        )
+
         const val MAX_RECOVERY_ATTEMPTS = 5
         const val RECOVERY_DELAY_MS = 500L
     }
 
     init {
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, Handler(Looper.getMainLooper()))
         scope.launch {
             val savedSpeed = PlayerPrefs.getSpeed(context)
             player.setPlaybackSpeed(savedSpeed)
@@ -195,8 +247,23 @@ class PlayerManager(private val context: Context) {
                 maybeRecover(error)
             }
 
+            /**
+             * Media3 reports *why* playWhenReady changed, which is the whole
+             * basis for auto-resume: only a route that vanished underneath us
+             * should bring the book back when it returns. A deliberate pause
+             * must stay paused.
+             */
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // `wasPlaying` still holds the pre-pause state here:
+                // onIsPlayingChanged arrives after this callback.
+                pausedByRouteLoss = !playWhenReady && wasPlaying &&
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+                if (pausedByRouteLoss) Logg.w("paused: audio route disappeared")
+            }
+
             override fun onIsPlayingChanged(playing: Boolean) {
                 Logg.d("onIsPlayingChanged: $playing")
+                wasPlaying = playing
                 PlaybackState.isPlaying.value = playing
                 if (playing) {
                     // A spell of real playback means the last error is behind
@@ -302,12 +369,12 @@ class PlayerManager(private val context: Context) {
             return
         }
         recoveryAttempts++
-        val wasPlaying = player.playWhenReady
+        val resumeAfterRetry = player.playWhenReady
         scope.launch {
             delay(RECOVERY_DELAY_MS * recoveryAttempts)
             Logg.w("recovery attempt $recoveryAttempts at ${player.currentPosition} ms")
             player.prepare()
-            if (wasPlaying) player.play()
+            if (resumeAfterRetry) player.play()
         }
     }
 
@@ -470,6 +537,7 @@ class PlayerManager(private val context: Context) {
     }
 
     fun release() {
+        audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         positionJob?.cancel()
         positionJob = null
         chapterJob?.cancel()

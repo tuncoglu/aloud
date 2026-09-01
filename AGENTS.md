@@ -42,6 +42,13 @@ was reading for.
 **Any JVM test that reads a file from byte zero cannot see either bug above.**
 Both were found only on device.
 
+**`onPlayWhenReadyChanged` reports a becoming-noisy pause even for a book that
+was ALREADY paused.** Auto-resume must therefore be gated on `wasPlaying`, not
+on the reason alone — otherwise a Bluetooth blip arms auto-resume on a book the
+listener deliberately stopped, and reconnecting a headset later starts it
+playing. Two cases must both be checked after any change here: playing when the
+route drops (must resume) and user-paused when it drops (must stay paused).
+
 ## Device workflow
 
 Use the `wear-device-testing` skill. The essentials:
