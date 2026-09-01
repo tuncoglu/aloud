@@ -20,6 +20,7 @@
     <string name="action_sleep_off">Sleep</string>
     <string name="uploader_off">Uploader off</string>
     <string name="uploader_pin">PIN %1$s</string>
+    <string name="uploader_needs_local_network">Needs local network permission</string>
     <string name="action_start">Start</string>
     <string name="action_stop">Stop</string>
 </resources>
