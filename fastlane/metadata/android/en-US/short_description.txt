@@ -1,0 +1,1 @@
+Offline audiobook player for Wear OS, with chapters and no phone needed

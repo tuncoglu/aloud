@@ -1,0 +1,8 @@
+* The player screen scrolls, so the speed and sleep-timer controls are
+  reachable on smaller watches (they were off-screen)
+* A "now playing" row in the library takes you back to the player
+* The uploader says when it lacks local-network permission instead of showing
+  an address nothing can reach, and starts as soon as permission is granted
+* Chapters are read from the file rather than from playback, so they appear for
+  a book resumed at a saved position, and large books parse in a fraction of a
+  second

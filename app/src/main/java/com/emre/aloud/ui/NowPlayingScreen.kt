@@ -1,6 +1,8 @@
 package com.emre.aloud.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -26,6 +29,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
+import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
 import com.emre.aloud.R
@@ -77,22 +82,42 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
         }
     }
 
-    // Tick once a minute so the sleep countdown stays fresh.
+    // Tick so the sleep countdown stays fresh. The clock is refreshed *before*
+    // the first delay: waiting 30 s first meant a freshly armed 15-minute timer
+    // was measured against a stale `now` and read "Zzz 16m".
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(sleepEndMs) {
         while (sleepEndMs != null) {
-            delay(30_000)
             now = System.currentTimeMillis()
+            delay(30_000)
         }
     }
 
     val chapterIndex = remember(positionMs, chapters) {
         chapters.chapterIndexAt(positionMs)
     }
-    val sleepRemainingMin = sleepEndMs?.let { ((it - now) / 60_000).toInt().coerceAtLeast(1) }
+    // Round remaining time up: a 15-minute timer should read "15m" for its
+    // first minute, not drop to "14m" a second after it is armed.
+    val sleepRemainingMin = sleepEndMs?.let {
+        ((it - now + 59_999) / 60_000).toInt().coerceAtLeast(1)
+    }
+
+    // This screen has to scroll. Cover art plus a two-line chapter title pushed
+    // the speed and sleep chips clean off the bottom of a 480 px watch - they
+    // were unreachable - and clipped the Chapters button against the bezel.
+    val scrollState = rememberScrollState()
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .rotaryScrollable(
+                RotaryScrollableDefaults.behavior(scrollState),
+                focusRequester,
+            )
+            .verticalScroll(scrollState)
+            .padding(vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
