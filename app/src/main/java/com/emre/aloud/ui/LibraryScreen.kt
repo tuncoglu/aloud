@@ -1,6 +1,7 @@
 package com.emre.aloud.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,6 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -35,6 +38,7 @@ import com.emre.aloud.R
 import com.emre.aloud.books.Book
 import com.emre.aloud.books.BooksRepository
 import com.emre.aloud.data.PlayerPrefs
+import com.emre.aloud.playback.PlaybackState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -44,8 +48,14 @@ import kotlinx.coroutines.withContext
  *  progress %, and long-press delete against a confirmation dialog. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit, onDelete: suspend (Book) -> Unit) {
+fun LibraryScreen(
+    onPlay: (Book) -> Unit,
+    onOpenUploader: () -> Unit,
+    onOpenNowPlaying: () -> Unit,
+    onDelete: suspend (Book) -> Unit,
+) {
     val context = LocalContext.current
+    val nowPlaying by PlaybackState.nowPlaying.collectAsState()
     var books by remember { mutableStateOf<List<Book>>(emptyList()) }
     var positions by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var durations by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
@@ -91,6 +101,24 @@ fun LibraryScreen(onPlay: (Book) -> Unit, onOpenUploader: () -> Unit, onDelete: 
             rotaryScrollableBehavior = rotaryBehavior,
         ) {
             item { ListHeader { Text(stringResource(R.string.library_header)) } }
+            // Way back to the player. Without this the library was a one-way
+            // trip: NowPlaying has a back handler to here, but nothing led the
+            // other way, so the only route back was re-tapping the book (which
+            // reloads it) or restarting the app.
+            nowPlaying?.let { np ->
+                item {
+                    Text(
+                        text = stringResource(R.string.library_now_playing, np.title),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenNowPlaying() }
+                            .padding(vertical = 10.dp, horizontal = 16.dp),
+                        color = Color.Cyan,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             items(count = books.size, key = { books[it].id }) { i ->
                 val book = books[i]
                 val pct = posPct(positions[book.id], durations[book.id])

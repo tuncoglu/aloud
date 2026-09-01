@@ -5,6 +5,7 @@
     <string name="library_header">My audiobooks</string>
     <string name="library_empty">No books yet</string>
     <string name="library_uploader">Uploader</string>
+    <string name="library_now_playing">▶ %1$s</string>
     <string name="library_delete_title">Delete book?</string>
     <string name="library_delete_message">Removes %1$s from the watch. Saved position is gone too.</string>
     <string name="library_delete_done">Deleted</string>

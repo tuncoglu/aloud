@@ -116,12 +116,18 @@ fun WearApp(
     when (screen) {
         Screen.Library -> {
             LibraryScreen(
-                onPlay = {
-                    requestNotificationPermission()
-                    uiOr.playBook(it)
+                onPlay = { book ->
+                    // Re-opening the book that is already loaded would tear the
+                    // player down and re-prepare it - an audible hiccup for what
+                    // the user means as "show me the player".
+                    if (PlaybackState.nowPlaying.value?.id != book.id) {
+                        requestNotificationPermission()
+                        uiOr.playBook(book)
+                    }
                     screen = Screen.NowPlaying
                 },
                 onOpenUploader = { screen = Screen.Uploader },
+                onOpenNowPlaying = { screen = Screen.NowPlaying },
                 onDelete = { book ->
                     // Stop playback if the deleted book is the one playing,
                     // then drop the file and its saved position. The library
