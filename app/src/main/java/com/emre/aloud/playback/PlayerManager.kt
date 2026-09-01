@@ -90,6 +90,10 @@ class PlayerManager(private val context: Context) {
             true,
         )
         .setWakeMode(C.WAKE_MODE_LOCAL)
+        // Pause when the audio route disappears rather than playing on into
+        // nothing. Without this, a Bluetooth headset disconnecting does not
+        // stop the book, so a run ends with minutes of it missed.
+        .setHandleAudioBecomingNoisy(true)
         .setSeekBackIncrementMs(30_000)
         .setSeekForwardIncrementMs(30_000)
         .build()
@@ -152,6 +156,19 @@ class PlayerManager(private val context: Context) {
     private var chapterJob: Job? = null
     private var sleepJob: Job? = null
     private var ticksSinceSave = 0
+    private var recoveryAttempts = 0
+
+    private companion object {
+        /** A changing Bluetooth route surfaces as one of these. */
+        val RECOVERABLE_ERROR_CODES = setOf(
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED,
+        )
+        const val MAX_RECOVERY_ATTEMPTS = 5
+        const val RECOVERY_DELAY_MS = 500L
+    }
 
     init {
         scope.launch {
@@ -170,14 +187,21 @@ class PlayerManager(private val context: Context) {
         }
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                Logg.d("playerError: ${error.errorCodeName} (${error.message})")
+                // Logged at warning level so it survives into release builds:
+                // this class of failure only appears on a real headset, and the
+                // first report of it left nothing behind to diagnose.
+                Logg.w("playerError: ${error.errorCodeName} (${error.message})")
                 PlaybackState.playbackError.value = error.errorCodeName
+                maybeRecover(error)
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
                 Logg.d("onIsPlayingChanged: $playing")
                 PlaybackState.isPlaying.value = playing
                 if (playing) {
+                    // A spell of real playback means the last error is behind
+                    // us, so the retry budget is fresh for the next one.
+                    recoveryAttempts = 0
                     startPositionTicker()
                 } else {
                     positionJob?.cancel()
@@ -255,6 +279,36 @@ class PlayerManager(private val context: Context) {
                 scope.launch { PlayerPrefs.setSpeed(context, playbackParameters.speed) }
             }
         })
+    }
+
+    /**
+     * Re-prepares after an audio-track failure so a book does not simply die.
+     *
+     * A Bluetooth route changing under the player — a phone notification
+     * grabbing the headset, the headset dropping and coming back — surfaces as
+     * an `AUDIO_TRACK_*` error. ExoPlayer stops and stays stopped, which is why
+     * a run ended with the book silent and unresumable. `prepare()` rebuilds the
+     * audio track against whatever route now exists; the position is kept, so
+     * playback continues where it stopped.
+     *
+     * Bounded on purpose: if the route is genuinely gone, retrying forever would
+     * spin. Anything that is not an audio-track failure (a missing or unreadable
+     * file) is left alone, because retrying cannot help it.
+     */
+    private fun maybeRecover(error: PlaybackException) {
+        val recoverable = error.errorCode in RECOVERABLE_ERROR_CODES
+        if (!recoverable || recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
+            Logg.w("not recovering (recoverable=$recoverable attempts=$recoveryAttempts)")
+            return
+        }
+        recoveryAttempts++
+        val wasPlaying = player.playWhenReady
+        scope.launch {
+            delay(RECOVERY_DELAY_MS * recoveryAttempts)
+            Logg.w("recovery attempt $recoveryAttempts at ${player.currentPosition} ms")
+            player.prepare()
+            if (wasPlaying) player.play()
+        }
     }
 
     /** Opens a book by its library id; [autoPlay] decides play vs prepare. */

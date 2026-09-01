@@ -249,7 +249,8 @@ def main() -> int:
     s.add_argument("--host", default="192.168.0.15")
     a = p.parse_args()
 
-    if a.cmd not in ("chapters",) and not ensure_single_device():
+    # `doctor` diagnoses a missing device, so it must run without one.
+    if a.cmd not in ("chapters", "doctor") and not ensure_single_device():
         print("no device attached — run `doctor`")
         return 1
 
