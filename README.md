@@ -2,176 +2,120 @@
 
 **Your audiobooks. On your Wear OS watch. No phone required.**
 
-Aloud is a small, open-source audiobook player for Wear OS, built and tested on
-the Pixel Watch 5. Put your own DRM-free M4B or MP3 books on the watch, connect
-Bluetooth headphones, and leave your phone at home.
+Aloud is a free, open-source, standalone audiobook player for Wear OS. Copy your
+own DRM-free **MP3 or M4B audiobooks** to a Pixel Watch, connect Bluetooth
+headphones, and go for a run without carrying a phone.
 
-It remembers exactly where you stopped, understands audiobook chapters, supports
-playback speed and sleep timers, and keeps playing with the screen off. Books get
-onto the watch through a tiny PIN-protected upload page that Aloud serves over
-your own WiFi — **no cable, companion app, account, cloud service, or self-hosted
-server required.**
+It is designed for people looking for a **Wear OS audiobook player**, an
+**offline audiobook app for Pixel Watch**, or a private way to listen to their
+own audiobook library without Audible, a cloud account, or a companion app.
 
-## Why Aloud?
+> **Status:** usable sideloaded alpha. Built and tested on Pixel Watch 5 running
+> Wear OS 4+. There is not yet a Play Store listing or public APK release.
 
-I wanted a simple thing: go for a run with just my watch and headphones and keep
-listening to my own audiobook library.
+[![CI](https://github.com/tuncoglu/aloud/actions/workflows/ci.yml/badge.svg)](https://github.com/tuncoglu/aloud/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-The good open-source audiobook players are largely phone-first. Watch-capable
-alternatives tend to be closed-source, limited in format support, or dependent
-on a phone or self-hosted server. Aloud deliberately does less: it turns the
-watch itself into a standalone audiobook player.
+## What it does
 
-The basic workflow is:
+- Plays local **MP3 and M4B** audiobooks directly on the watch
+- Remembers your position separately for every book, including after restarts
+- Reads chapters from M4B Nero/QuickTime chapter tracks and MP3 ID3 `CHAP` frames
+- Offers playback speed from 0.75–2.0× and a persistent 15/30/60/120-minute sleep timer
+- Keeps playing with the screen off and supports system media controls and headset buttons
+- Recovers cleanly when Bluetooth headphones temporarily disconnect
+- Transfers books through a built-in browser uploader over your local Wi-Fi
+- Requires no phone, companion app, account, cloud service, analytics, or tracking
 
-**M4B / MP3 on your computer → WiFi upload → watch → Bluetooth headphones**
+## The simple workflow
 
-Once the book is on the watch, Aloud does not need the phone or an internet
-connection to play it.
+```
+Computer ──(local Wi-Fi upload)──> Wear OS watch ──(Bluetooth)──> headphones
+```
 
-## Features
+On the watch, open **Aloud → Uploader → Start**. Aloud displays a local address
+and a six-digit PIN. Open that address on a computer on the same Wi-Fi, enter the
+PIN, and drag in your `.m4b` or `.mp3` files. Stop the uploader, choose a book,
+connect headphones, and listen.
 
-- **Standalone playback** — local MP3 + M4B playback directly from the watch
-- **Per-book resume** — returns exactly where you stopped, surviving app kills
-  and restarts
-- **Real chapter navigation** — Nero `chpl` and QuickTime chapter tracks in M4B,
-  plus ID3 `CHAP` frames in MP3
-- **Playback speed** — 0.75–2.0×, remembered between sessions
-- **Sleep timer** — 15/30/60/120 minutes, persisted and re-armed after restart
-- **Background playback** — foreground media service keeps playing with the
-  screen off or locked
-- **Bluetooth controls** — system media controls and headset buttons work
-- **Bluetooth recovery** — pauses cleanly if your headset disappears and resumes
-  when it returns; a pause you requested stays paused
-- **WiFi book transfer** — built-in browser uploader with a 6-digit PIN; no
-  companion app required
-- **No account or cloud** — your audiobook files stay on your devices
+The uploader is intentionally local and temporary: it starts only when you ask
+it to, stops after two minutes idle, and removes incomplete files. Aloud does not
+need internet access to play books already stored on the watch.
 
-## Adding books
+## Install
 
-1. On the watch, open Aloud → **Uploader** → **Start**. Grant local-network
-   permission the first time. Aloud shows an address and a 6-digit PIN.
-2. On a computer connected to the same WiFi, open the displayed address in a
-   browser, enter the PIN, and drag in `.m4b` or `.mp3` files.
-3. Stop the uploader, connect your Bluetooth headphones, choose the book, and go.
+Aloud is currently installed by sideloading. Enable wireless debugging on the
+watch:
 
-Uploads are sent in 1 MiB chunks and each failed chunk is retried up to three
-times. If a transfer cannot complete, Aloud removes the partial file rather than
-leaving a broken book in the library. The upload server automatically stops
-after 2 minutes idle or after 20 incorrect PIN attempts.
+**Settings → System → Developer options → Wireless debugging → On**
 
-## Install (sideload)
-
-Aloud is currently installed by sideloading it onto the watch. Enable wireless
-debugging on the watch first:
-
-**Settings → System → Developer options → Wireless debugging → ON**
-
-Then from a computer with ADB:
+Then pair and connect with ADB:
 
 ```bash
-adb pair 192.168.x.y:<pair-port>        # enter the 6-digit code shown on watch
-adb connect 192.168.x.y:<connect-port>  # ports rotate after each watch reboot
+adb pair 192.168.x.y:<pair-port>        # enter the code shown on the watch
+adb connect 192.168.x.y:<connect-port>
 ./gradlew :app:installDebug
 ```
 
-`adb mdns services` can discover the current pair/connect ports.
-
-Dev-only alternatives: `adb push` to `/data/local/tmp` then
-`adb shell "run-as com.emre.aloud sh -c 'cp <src> files/books/'"`, or launch with
-`--es autoplay <bookId>` to skip the UI.
+The debug APK is also produced by CI for every push. A public, signed APK download
+will be added to GitHub Releases when the distribution workflow is ready.
 
 ## Build and test
 
+Requirements: JDK 21 and an Android SDK with API 37 installed.
+
 ```bash
-JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleDebug      # dev (~42 MB, debug logging + hooks)
-JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:assembleRelease    # signed release (~5 MB, R8-minified)
-JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:testDebugUnitTest  # 39 JVM tests
-JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1 ./gradlew :app:lintDebug          # gate: 0 errors, no baseline
+./gradlew :app:testDebugUnitTest
+./gradlew :app:lintDebug
+./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
 ```
 
-Unit tests cover `Mp4ChapterParser` against synthetic Nero/QuickTime files, the
-uploader's full endpoint contract (`UploadServerTest`: PIN enforcement, offset
-and size validation, chunked writes, `.part` reaping), and the library's name and
-media-id rules — no device or real audiobook is needed for the test suite.
+The test suite covers M4B chapter parsing, MP3 chapter handling, the uploader
+contract (including PIN enforcement, chunk validation, retries and cleanup), and
+library naming/media-ID rules. CI runs tests, lint and a debug build on every
+push and pull request; tagged builds produce a signed release APK when the
+repository signing secrets are configured.
 
-The release keystore lives in `~/.gradle/aloud-release.jks` with its password in
-`~/.gradle/gradle.properties` (`aloudReleaseStorePassword`) — neither is in the
-repo. CI (GitHub Actions) builds and tests on every push; tagged releases build a
-signed APK from repository secrets `ALOUD_STORE_B64` + `ALOUD_STORE_PASSWORD`.
+## Why this project exists
 
-Stack: AGP 9.3.2 (built-in Kotlin), Compose for Wear OS 1.6.2, Media3 1.11.0,
-Ktor 3.5.2 (CIO), DataStore 1.2.1, coroutines 1.11.0. minSdk 30 / targetSdk 37.
+Most Wear OS audiobook options are phone-first, closed, cloud-dependent, or
+awkward for a personal DRM-free library. Aloud does one thing deliberately:
+make the watch itself a reliable offline audiobook player for running, walking,
+travel, and sleep.
 
 ## Engineering notes
 
-### Bluetooth interruptions
+The interesting implementation details are documented in the source and
+[ROADMAP.md](ROADMAP.md). In particular:
 
-A phone notification seizing the headset, or the headset dropping and returning,
-changes the audio route underneath the player. Left alone that surfaces as an
-`AUDIO_TRACK_*` failure and ExoPlayer stops for good — a run ends with the book
-silent and the position lost.
+- MP4/M4B chapters are parsed in O(chapters), avoiding Media3's slow full sample-table
+  scan on large audiobooks.
+- Chapter discovery happens off the playback path, so chapters remain available
+  when resuming a paused book.
+- Bluetooth route loss is handled as a recoverable interruption while deliberate
+  pauses remain paused.
+- The release build is R8-minified and signed outside the repository.
 
-Aloud sets `handleAudioBecomingNoisy` so the route going away pauses cleanly,
-watches for a usable output returning through an `AudioDeviceCallback`, and
-resumes from the same position. Auto-resume is armed only by a becoming-noisy
-pause, so a pause you asked for is never undone, and only headset-type outputs
-count — a dropped headset will not restart the book out loud on your wrist.
+## Limitations
 
-### Fast M4B chapter parsing
+- Wear OS only; this is not an Android phone, iOS, or desktop player.
+- Tested primarily on Pixel Watch 5. Other Wear OS watches may work but are not
+  yet verified.
+- Files must be DRM-free. ALAC-only M4B files are not currently supported.
+- Sideloading is required for now.
+- Long uninterrupted listening and battery impact still need broader real-world
+  testing.
 
-Chapters are read from the file by `books/ChapterReader.kt` on a background
-thread, never from playback. Two things forced that design, both found only by
-testing on the watch:
+## Contributing
 
-1. The player *does* publish chapters through `Player.Listener`, but only while
-   it is actually playing, and `Mp4Extractor` discards them on the first seek. A
-   book opened paused at its saved position — the normal case, and the app's
-   default startup screen — got nothing.
-2. Media3's MP4 extractor parses the entire audio sample table before it
-   publishes chapters. For a 1.3 GB / 23 h audiobook that is millions of entries:
-   **over 4 minutes** on a Pixel Watch 5.
+Bug reports and device compatibility reports are welcome. Please include the
+watch model, Wear OS version, Aloud version/commit, file format, and whether the
+problem is reproducible after restarting the app. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-So MP4/M4B is parsed by `books/Mp4ChapterParser.kt`, which reads only the Nero
-`chpl` atom and the QuickTime chapter track — O(chapters) instead of O(audio
-samples), and **0.3 seconds** for that same 1.3 GB book. MP3 has no sample table,
-so Media3's `Mp3Extractor` reads ID3 `CHAP` frames directly in well under a
-second.
+## Roadmap and licence
 
-Both paths are checked against `ffprobe`: chapter counts match across the whole
-reference library, and the parser has 21 unit tests against synthetic
-Nero/QuickTime files built in `app/src/test/.../Mp4Builder.kt`.
+See [ROADMAP.md](ROADMAP.md) for current verification status and planned work.
 
-### Migrating from WearBook / WearBite
-
-The app was renamed from WearBook/WearBite to Aloud, and its application id from
-`com.emre.wearbook` to `com.emre.aloud`. Android treats that as a different app:
-the old install will not upgrade in place. To keep your library, stage it through
-`/data/local/tmp` before uninstalling the old version:
-
-```bash
-# 1. copy the books out of the old app, then off the watch
-adb shell "run-as com.emre.wearbook sh -c 'cp files/books/* /data/local/tmp/'"
-adb pull /data/local/tmp ./books-backup
-
-# 2. replace the app
-adb uninstall com.emre.wearbook
-./gradlew :app:installDebug
-
-# 3. copy them back in
-adb push ./books-backup/. /data/local/tmp/
-adb shell "run-as com.emre.aloud sh -c 'mkdir -p files/books && cp /data/local/tmp/*.m4b /data/local/tmp/*.mp3 files/books/'"
-adb shell "rm -f /data/local/tmp/*.m4b /data/local/tmp/*.mp3"
-```
-
-Resume positions live in DataStore under the old application id and are not
-carried over — a moved book starts from the beginning. Re-uploading through the
-Uploader page works just as well if you would rather start clean.
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for known gaps and planned improvements.
-
-## License
-
-GPL-3.0. See [LICENSE](LICENSE).
+Aloud is licensed under [GPL-3.0](LICENSE).
