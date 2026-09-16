@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible problem with Aloud
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach audiobook files, private library metadata, PINs, or signing material.
+  - type: input
+    id: watch
+    attributes:
+      label: Watch and Wear OS version
+      placeholder: Pixel Watch 5, Wear OS 6
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Aloud version or commit
+      placeholder: v0.1.2 or 1b6ec29
+    validations:
+      required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: Audiobook format
+      options:
+        - MP3
+        - M4B
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: Tell us exactly what you did and what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove personal information before posting.
+      render: text
