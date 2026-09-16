@@ -20,11 +20,14 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          # The legacy SDK package "tools" was removed from Google's repository.
+          packages: platform-tools
 
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --console=plain
 
-      - name: Lint (now a real gate - 0 errors, no baseline)
+      - name: Lint
         run: ./gradlew :app:lintDebug --console=plain
 
       - name: Build debug APK
@@ -36,11 +39,6 @@ jobs:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-  # Builds a signed release when a tag is pushed. Needs two repository secrets:
-  #   ALOUD_STORE_B64       base64 of ~/.gradle/aloud-release.jks
-  #   ALOUD_STORE_PASSWORD  the keystore/key password
-  # Runners start with no keystore, so it has to be materialised here — writing
-  # only the password left assembleRelease looking for a file that never existed.
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build-and-test
