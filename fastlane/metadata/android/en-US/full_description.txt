@@ -1,23 +1,29 @@
-Aloud is a no-frills, open-source audiobook player that runs entirely on your
-watch. It plays your own DRM-free MP3 and M4B files over Bluetooth, remembers
-where you stopped in every book, follows chapters, and never needs a phone.
+Aloud is an open-source, standalone audiobook player for Wear OS watches.
+It is an offline audiobook app for Pixel Watch users who want to listen to their
+own DRM-free MP3 and M4B files without carrying a phone.
 
-Getting books onto the watch needs no cable and no companion app: Aloud serves a
-small upload page over your own WiFi, protected by a 6-digit PIN shown on the
-watch. Open it in any browser on the same network and drag your files in.
+Copy books to the watch through Aloud's built-in browser uploader over local
+Wi-Fi. The uploader is protected by a six-digit PIN and needs no cable,
+companion app, account, cloud service, or internet connection. Once a book is
+stored on the watch, connect Bluetooth headphones and listen anywhere.
 
 Features
 
-* Local MP3 and M4B playback, standalone on the watch
-* Resume exactly where you left off, per book, across restarts
-* Chapter navigation: Nero and QuickTime chapters in M4B, ID3 CHAP in MP3
-* Playback speed 0.75-2.0x, remembered between sessions
-* Sleep timer (15/30/60/120 min) that survives a restart
-* Keeps playing with the screen off; system media controls and Bluetooth
-  buttons work
-* Built-in PIN-protected upload server; no account, no cloud, no tracking
+* Standalone local MP3 and M4B playback on Wear OS
+* Per-book resume position across app restarts
+* Chapter navigation for M4B Nero and QuickTime chapters and MP3 ID3 CHAP frames
+* Playback speed from 0.75x to 2.0x
+* Persistent 15, 30, 60, and 120-minute sleep timer
+* Background playback with the screen off
+* System media controls and Bluetooth headset buttons
+* Recovery from temporary Bluetooth disconnection
+* Browser-based local Wi-Fi uploader with PIN protection
+* No account, cloud sync, analytics, tracking, or third-party services
 
-Aloud has no network access beyond the upload server you start yourself, no
-analytics and no third-party services. Your library never leaves your watch.
+Aloud is currently a sideloaded alpha, built and tested primarily on the Pixel
+Watch 5 with Wear OS 4 or newer. It is not yet available through Google Play.
+The project is intended for personal DRM-free audiobook libraries, running,
+walking, travel, and sleep.
 
-Built for the Pixel Watch. Requires Wear OS 4 or newer.
+Search terms: Wear OS audiobook player, Pixel Watch audiobook app, offline
+audiobook player, MP3 M4B watch player.
