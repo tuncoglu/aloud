@@ -90,13 +90,44 @@ Use the `wear-device-testing` skill. The essentials:
 
 ## Library conventions
 
-Audiobooks live in `~/Audiobooks`, named **`<Author> - <Full Title>.<ext>`** —
-author first, then the full title including any subtitle.
+Audiobooks live **flat** in `~/Audiobooks` — one file per book, no subdirectories.
+`BooksRepository.list()` scans with `listFiles { it.isFile }`, so a directory is
+invisible to the player however it is named; a multi-part download has to be
+merged into a single file before it can be played at all.
+
+Names are **`<Author> - <Full Title>.<ext>`** — author first, then the full title
+including any subtitle. The file name *is* what the player shows, so it carries
+the reading order too:
+
+- **Numbered series** put the number between the author and the title:
+  `<Author> - <Series> <NN> - <Full Title>.<ext>`. The number is the *listening*
+  position, which is not always publication order.
+- **Core entries take integers; interstitial works take decimals** — a novella or
+  connected standalone is slotted as `<NN>.<D>` between the two integers it falls
+  between. This keeps the whole series in play order while still showing at a
+  glance which works are core novels and which are not.
+- **Works outside the sequence stay unnumbered.** They sort clear of the numbered
+  run rather than inside it.
+- **Zero-pad integers** (`03`, not `3`) and sort the app's way: `list()` sorts on
+  the lowercased file name, so lexicographic order has to agree with play order.
+- Leave gaps in the decimal positions — `02.5` then `02.7` costs nothing and
+  avoids renumbering a shelf when a later title needs a slot.
+
 Tags follow `artist` = author and `title` = `album` = full title including
 subtitle; cover art embedded. Retag losslessly and confirm the audio is untouched:
 
 ```bash
-ffmpeg -i in.m4b -map 0 -c copy -metadata title="..." -disposition:v:0 attached_pic out.m4b
+# Do NOT use `-map 0`. Any m4b carrying a bin_data stream (most Audible rips)
+# fails with "Tag text incompatible with output codec id '98314'", and ffmpeg
+# leaves a 0-byte out.m4b behind — so a blind `mv out.m4b in.m4b` destroys the
+# source. That has already cost one audiobook. Map audio + cover only; the
+# bin_data stream is redundant (chapter titles live in the chapter track).
+ffmpeg -i in.m4b -map 0:a -map 0:v -c copy \
+  -metadata title="..." -metadata album="..." \
+  -disposition:v:0 attached_pic out.m4b
+# Never replace the original until the output is non-empty and verified:
+ffprobe -v error -count_packets -select_streams a:0 \
+  -show_entries stream=nb_read_packets -of csv=p=0 out.m4b   # must equal the source
 ffmpeg -v error -i FILE -map 0:a -c copy -f streamhash -hash md5 -   # must not change
 ```
 
