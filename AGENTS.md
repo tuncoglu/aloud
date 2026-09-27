@@ -99,6 +99,11 @@ Names are **`<Author> - <Full Title>.<ext>`** — author first, then the full ti
 including any subtitle. The file name *is* what the player shows, so it carries
 the reading order too:
 
+- **Separate a subtitle with an em dash (`—`), never a colon.** The file name is
+  what the player displays, and `:` cannot survive a trip to Android: MTP
+  silently rewrites it to `_`, so a phone-side copy shows a mangled title. An em
+  dash transfers intact (verified over MTP). The rest of the FAT-forbidden set —
+  `\ / * ? " < > |` — is off limits for the same reason.
 - **Numbered series** put the number between the author and the title:
   `<Author> - <Series> <NN> - <Full Title>.<ext>`. The number is the *listening*
   position, which is not always publication order.
