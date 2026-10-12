@@ -30,8 +30,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
-import java.net.Inet4Address
-import java.net.NetworkInterface
 import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -150,17 +148,6 @@ class UploadServer(
         /** Fresh PIN per server start; shown on the watch, never served over HTTP. */
         fun newPin(): String =
             SecureRandom().nextInt(1_000_000).toString().padStart(PIN_LENGTH, '0')
-
-        /** First non-loopback IPv4 of the watch, for display in the app. */
-        fun watchIpv4(): String? = try {
-            NetworkInterface.getNetworkInterfaces().toList()
-                .filter { it.isUp && !it.isLoopback }
-                .flatMap { it.inetAddresses.toList() }
-                .firstOrNull { it is Inet4Address && !it.isLoopbackAddress }
-                ?.hostAddress
-        } catch (_: Exception) {
-            null
-        }
     }
 }
 

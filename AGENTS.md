@@ -49,6 +49,15 @@ listener deliberately stopped, and reconnecting a headset later starts it
 playing. Two cases must both be checked after any change here: playing when the
 route drops (must resume) and user-paused when it drops (must stay paused).
 
+**The watch's Wi-Fi radio is off unless an app asks for it.** A foreground
+service that binds port 8080 is not enough: the uploader screen showed a URL and
+PIN while nothing on the LAN could reach the watch. `UploadServerService` now holds
+a `requestNetwork(TRANSPORT_WIFI)` request for as long as the server runs (the
+documented Wear OS way to make the watch join a saved network and stay on it),
+and the address shown comes from that network's `LinkProperties`, not from
+whichever interface is up first. Anything that serves inbound traffic needs the
+same. A JVM test cannot see this at all.
+
 ## Device workflow
 
 Use the `wear-device-testing` skill. The essentials:
@@ -70,6 +79,11 @@ Use the `wear-device-testing` skill. The essentials:
   input swipe` moves `NowPlayingScreen`; it does nothing to `TransformingLazyColumn`
   in the library or chapter list. That is an adb limitation, not an app bug —
   fingers and the crown work on both.
+- **Wireless debugging does not keep the watch reachable.** An idle watch with
+  nothing holding a Wi-Fi request drops off the LAN even with wireless debugging
+  on (ARP `FAILED`, `adb mdns services` empty), and `adb devices` keeps listing it
+  from cache. When it returns, the connect port has changed: re-read it with
+  `adb mdns services` and `adb connect` again. Pairing survives.
 - **mdns leaves duplicate adb entries** (`192.168.0.15:39023` and
   `adb-…_tcp`), after which plain `adb shell` fails with "more than one device".
   `adb disconnect <ip:port>` clears it.

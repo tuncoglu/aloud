@@ -33,9 +33,11 @@ own audiobook library without Audible, a cloud account, or a companion app.
 Computer ──(local Wi-Fi upload)──> Wear OS watch ──(Bluetooth)──> headphones
 ```
 
-On the watch, open **Aloud → Uploader → Start**. Aloud displays a local address
-and a six-digit PIN. Open that address on a computer on the same Wi-Fi, enter the
-PIN, and drag in your `.m4b` or `.mp3` files. Stop the uploader, choose a book,
+On the watch, open **Aloud → Uploader → Start**. Aloud asks the watch to join a
+saved Wi-Fi network (it keeps the radio off otherwise), then displays a local
+address and a six-digit PIN; if no saved network is in range, it says so. Open
+that address on a computer or Android phone on the same Wi-Fi, enter the PIN, and
+drag in (or pick) your `.m4b` or `.mp3` files. Stop the uploader, choose a book,
 connect headphones, and listen.
 
 The uploader is intentionally local and temporary: it starts only when you ask

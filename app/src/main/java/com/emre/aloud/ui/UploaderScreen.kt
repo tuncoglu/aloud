@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,13 +19,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
 import com.emre.aloud.R
-import com.emre.aloud.upload.UploadServer
 import com.emre.aloud.upload.UploadServerService
 
 @Composable
@@ -32,7 +33,15 @@ fun UploaderScreen() {
     val context = LocalContext.current
     val running by UploadServerService.running.collectAsState()
     val pin by UploadServerService.pin.collectAsState()
-    val ip = remember { UploadServer.watchIpv4() ?: "?" }
+    val wifi by UploadServerService.wifi.collectAsState()
+
+    // A dozing display lets the radio drop to power-save, which is when the
+    // page stops answering. Only held while this screen is up and serving.
+    val view = LocalView.current
+    DisposableEffect(running) {
+        view.keepScreenOn = running
+        onDispose { view.keepScreenOn = false }
+    }
 
     /**
      * Android 17 blocks inbound local-network traffic unless this is granted,
@@ -86,12 +95,16 @@ fun UploaderScreen() {
         Text(
             text = when {
                 unreachable -> stringResource(R.string.uploader_needs_local_network)
-                running -> "http://$ip:${UploadServerService.PORT}"
-                else -> stringResource(R.string.uploader_off)
+                !running -> stringResource(R.string.uploader_off)
+                else -> when (val w = wifi) {
+                    is UploadServerService.Wifi.Ready -> "http://${w.ip}:${UploadServerService.PORT}"
+                    UploadServerService.Wifi.Unavailable -> stringResource(R.string.uploader_no_wifi)
+                    UploadServerService.Wifi.Waiting -> stringResource(R.string.uploader_waiting_wifi)
+                }
             },
             textAlign = TextAlign.Center,
         )
-        if (running && !unreachable) {
+        if (running && !unreachable && wifi is UploadServerService.Wifi.Ready) {
             Text(
                 text = stringResource(R.string.uploader_pin, pin ?: "…"),
                 textAlign = TextAlign.Center,
