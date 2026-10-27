@@ -8,7 +8,7 @@ things that are expensive to rediscover.
 
 ```bash
 export JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1
-./gradlew :app:testDebugUnitTest   # 39 JVM tests
+./gradlew :app:testDebugUnitTest   # 45 JVM tests
 ./gradlew :app:lintDebug           # gate: 0 errors, no baseline
 ./gradlew :app:assembleRelease     # signed, ~5 MB, R8-minified
 ```

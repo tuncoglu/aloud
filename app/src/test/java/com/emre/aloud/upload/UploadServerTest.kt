@@ -3,9 +3,11 @@ package com.emre.aloud.upload
 import com.emre.aloud.books.Book
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.delay
@@ -45,7 +47,7 @@ class UploadServerTest {
         pin: String = this.pin,
         block: suspend io.ktor.server.testing.ApplicationTestBuilder.(UploadState, FakeStore) -> Unit,
     ) = testApplication {
-        application { uploadRoutes(store, state, pin, onAutoStop = { }) }
+        application { uploadRoutes(store, state, pin) }
         block(state, store)
     }
 
@@ -74,18 +76,85 @@ class UploadServerTest {
     }
 
     @Test
-    fun `20 wrong PINs trip the lockout`() {
-        var autoStopped = false
-        val store = newStore()
-        val state = UploadState()
-        testApplication {
-            application { uploadRoutes(store, state, pin, onAutoStop = { autoStopped = true }) }
-            repeat(20) {
-                assertEquals(HttpStatusCode.Unauthorized, client.post("/book?name=a.m4b&pin=000000").status)
-            }
-            delay(500) // the lockout fires after a short flush delay
+    fun `ten wrong PINs lock the address out, even for the right PIN`() = withServer(newStore()) { _, _ ->
+        repeat(10) {
+            assertEquals(HttpStatusCode.Unauthorized, client.get("/books?pin=000000").status)
         }
-        assertTrue(autoStopped)
+        val locked = client.get("/books?pin=$pin")
+        assertEquals(HttpStatusCode.TooManyRequests, locked.status)
+        assertTrue(locked.headers["Retry-After"]!!.toInt() > 0)
+    }
+
+    @Test
+    fun `a lockout does not stop the server`() {
+        val store = newStore()
+        testApplication {
+            application { uploadRoutes(store, UploadState(), pin) }
+            repeat(30) { client.get("/books?pin=000000") }
+            delay(500)
+        }
+    }
+
+    @Test
+    fun `the lockout expires and addresses are tracked separately`() {
+        var now = 0L
+        val guard = PinGuard { now }
+        repeat(9) { assertFalse(guard.recordFailure("10.0.0.5")) }
+        assertTrue(guard.recordFailure("10.0.0.5"))
+        assertTrue(guard.lockedForMs("10.0.0.5") > 0)
+        assertEquals(0L, guard.lockedForMs("10.0.0.6"))
+        now += 5 * 60_000L + 1
+        assertEquals(0L, guard.lockedForMs("10.0.0.5"))
+        // the counter starts over after a lockout
+        repeat(9) { assertFalse(guard.recordFailure("10.0.0.5")) }
+    }
+
+    @Test
+    fun `old failures do not add up to a lockout`() {
+        var now = 0L
+        val guard = PinGuard { now }
+        repeat(9) { guard.recordFailure("10.0.0.5") }
+        now += 6 * 60_000L
+        assertFalse(guard.recordFailure("10.0.0.5"))
+    }
+
+    @Test
+    fun `only IP-literal and localhost Host headers are served`() {
+        for (ok in listOf("192.168.0.15:8080", "192.168.0.15", "localhost", "localhost:8080", "[fe80::1]:8080", "[fe80::1%wlan0]")) {
+            assertTrue(ok, hostAllowed(ok))
+        }
+        for (bad in listOf(null, "", "evil.example.com", "evil.example.com:8080", "192.168.0.15.evil.com",
+            "999.1.1.1", "1.2.3", "fe80::1", "[]", "localhost.evil.com")) {
+            assertFalse("$bad", hostAllowed(bad))
+        }
+    }
+
+    @Test
+    fun `a request naming a hostname is refused`() = withServer(newStore()) { _, _ ->
+        val r = client.get("/books?pin=$pin") { header(HttpHeaders.Host, "rebind.example.com:8080") }
+        assertEquals(421, r.status.value)
+        assertEquals(421, client.get("/") { header(HttpHeaders.Host, "rebind.example.com") }.status.value)
+        assertEquals(HttpStatusCode.OK, client.get("/books?pin=$pin") { header(HttpHeaders.Host, "192.168.0.15:8080") }.status)
+    }
+
+    @Test
+    fun `a second writer to the same file is told to retry`() = withServer(
+        newStore(),
+        UploadState(lockWaitMs = 100),
+    ) { state, store ->
+        val body = "hello".toByteArray()
+        state.withNameLock("book.m4b") {
+            val same = client.post("/book?name=book.m4b&pin=$pin&offset=0&total=${body.size}") { setBody(body) }
+            assertEquals(HttpStatusCode.Conflict, same.status)
+            assertEquals(HttpStatusCode.Conflict, client.delete("/book?name=book.m4b&pin=$pin").status)
+            assertEquals(HttpStatusCode.Conflict, client.delete("/part?name=book.m4b&pin=$pin").status)
+            // a different file is unaffected
+            val other = client.post("/book?name=other.m4b&pin=$pin&offset=0&total=${body.size}") { setBody(body) }
+            assertEquals(HttpStatusCode.OK, other.status)
+        }
+        assertFalse(File(store.dir, "book.m4b").exists())
+        val after = client.post("/book?name=book.m4b&pin=$pin&offset=0&total=${body.size}") { setBody(body) }
+        assertEquals(HttpStatusCode.OK, after.status)
     }
 
     @Test

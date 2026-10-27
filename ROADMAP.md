@@ -9,7 +9,7 @@ its history is in git. This file is the whole inventory now.
 
 | Gate | Command | State |
 | --- | --- | --- |
-| Unit tests | `./gradlew :app:testDebugUnitTest` | ✅ 39 passing |
+| Unit tests | `./gradlew :app:testDebugUnitTest` | ✅ 45 passing |
 | Static analysis | `./gradlew :app:lintDebug` | ✅ 0 errors, no baseline |
 | Release build | `./gradlew :app:assembleRelease` | ✅ signed, R8-minified |
 
@@ -93,12 +93,14 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
 - ⬜ The browser upload page itself (the JS in `UploadServer.kt`) is still only
   exercised by hand; the server contract underneath it is covered by tests and
   was re-verified on the watch.
-- ⬜ Rate-limit wrong PINs per source address. Today any device on the LAN can
-  stop the uploader with 20 wrong guesses — an unauthenticated denial of service.
-  Also consider a `Host`-header check to defeat DNS rebinding.
-- ⬜ Serialise concurrent uploads to the same name. Two parallel POSTs to one
-  `.part` interleave their writes; the web client is sequential, so it takes a
-  second client to hit, but it can corrupt a book.
+- 🔶 **Uploader hardening** (JVM-tested, and the lockout and `Host` check were
+  confirmed against the real CIO server over raw sockets; not yet re-run on the
+  watch). Wrong PINs are counted per source address: the tenth locks that address
+  out for five minutes (429), and neither the server nor other devices are
+  affected — it used to stop the whole uploader after 20 guesses. Requests must
+  name the watch by IP literal or `localhost`, which defeats DNS rebinding (421
+  otherwise). Writes and deletes to one file name are serialised; a second
+  request waits 2 s, then gets 409 and the web client's retry takes it.
 - ⬜ Detect ALAC-only M4Bs and warn (ExoPlayer has no ALAC decoder; advise an AAC
   transcode).
 - ⬜ Library search/filter once the book count passes a screenful.
