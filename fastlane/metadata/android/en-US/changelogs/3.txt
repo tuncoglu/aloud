@@ -1,0 +1,5 @@
+* The uploader now locks out a device after 10 wrong PINs instead of shutting
+  down for everyone, rejects requests that do not use the watch's IP address,
+  and refuses two simultaneous writes to the same file
+* Fixed a crash risk when the uploader ran for hours on Android 15 and newer
+* Speed and sleep buttons now have screen-reader labels
