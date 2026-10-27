@@ -50,17 +50,26 @@ class UploadServerService : Service() {
         return START_NOT_STICKY
     }
 
+    /**
+     * Android 15 caps a dataSync foreground service at 6 hours per day and then
+     * calls this; a service that does not stop itself here is killed with a
+     * RemoteServiceException. The idle auto-stop normally gets there first.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        stopSelf()
+    }
+
     private fun startServer() {
         if (server != null) return
         val newPin = UploadServer.newPin()
         val channel = NotificationChannel(
-            CHANNEL_ID, "Uploads", NotificationManager.IMPORTANCE_LOW,
+            CHANNEL_ID, getString(R.string.uploads_channel_name), NotificationManager.IMPORTANCE_LOW,
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle(getString(R.string.app_name) + " uploads")
-            .setContentText("PIN " + newPin)
+            .setContentTitle(getString(R.string.uploads_notification_title, getString(R.string.app_name)))
+            .setContentText(getString(R.string.uploads_notification_text, newPin))
             .setOngoing(true)
             .build()
         startForeground(1, notification)

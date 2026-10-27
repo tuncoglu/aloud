@@ -26,4 +26,13 @@
     <string name="uploader_no_wifi">No Wi-Fi network. Add one in watch settings</string>
     <string name="action_start">Start</string>
     <string name="action_stop">Stop</string>
+    <string name="cover_description">Book cover</string>
+    <string name="progress_with_chapter">ch %1$d/%2$d · %3$s/%4$s</string>
+    <string name="playback_error">⚠ %1$s</string>
+    <string name="action_playback_speed">Playback speed</string>
+    <string name="action_sleep_timer">Sleep timer</string>
+    <string name="sleep_remaining">Zzz %1$dm</string>
+    <string name="uploads_channel_name">Uploads</string>
+    <string name="uploads_notification_title">%1$s uploads</string>
+    <string name="uploads_notification_text">PIN %1$s</string>
 </resources>

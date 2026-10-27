@@ -126,7 +126,7 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
         cover?.let {
             Image(
                 bitmap = it,
-                contentDescription = "Book cover",
+                contentDescription = stringResource(R.string.cover_description),
                 modifier = Modifier
                     .size(88.dp)
                     .padding(bottom = 4.dp),
@@ -140,14 +140,18 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
         )
         Text(
             text = if (chapters.isNotEmpty())
-                "ch ${(chapterIndex + 1).coerceAtLeast(1)}/${chapters.size} · ${fmtTime(positionMs)}/${fmtTime(durationMs)}"
+                stringResource(
+                    R.string.progress_with_chapter,
+                    (chapterIndex + 1).coerceAtLeast(1), chapters.size,
+                    fmtTime(positionMs), fmtTime(durationMs),
+                )
             else
                 "${fmtTime(positionMs)}/${fmtTime(durationMs)}",
             maxLines = 1,
         )
         error?.let {
             Text(
-                text = "⚠ $it",
+                text = stringResource(R.string.playback_error, it),
                 color = Color.Red,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
@@ -194,7 +198,8 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
             modifier = Modifier.padding(top = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(onClick = {
+            val speedDesc = stringResource(R.string.action_playback_speed)
+            Button(modifier = Modifier.semantics { contentDescription = speedDesc }, onClick = {
                 // Match with a tolerance: a speed restored from DataStore need
                 // not be bit-identical to an option, and exact Float equality
                 // would return -1 and snap the user back to 0.75x.
@@ -205,14 +210,15 @@ fun NowPlayingScreen(ui: PlaybackUi, onOpenChapters: () -> Unit) {
 
             // Cycle from the armed option, not the shrunk remaining minutes:
             // 15 → 30 → 60 → 120 → off, mid-countdown included.
-            Button(onClick = {
+            val sleepDesc = stringResource(R.string.action_sleep_timer)
+            Button(modifier = Modifier.semantics { contentDescription = sleepDesc }, onClick = {
                 val next = when (val idx = sleepArmed?.let { SLEEP_OPTIONS.indexOf(it) } ?: -1) {
                     -1 -> SLEEP_OPTIONS.first()
                     SLEEP_OPTIONS.lastIndex -> null // off
                     else -> SLEEP_OPTIONS[idx + 1]
                 }
                 ui.setSleepTimer(next)
-            }) { Text(if (sleepEndMs != null) "Zzz ${sleepRemainingMin}m" else stringResource(R.string.action_sleep_off)) }
+            }) { Text(if (sleepEndMs != null) stringResource(R.string.sleep_remaining, sleepRemainingMin ?: 0) else stringResource(R.string.action_sleep_off)) }
         }
     }
 }

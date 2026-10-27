@@ -65,11 +65,13 @@ jobs:
           printf '%s' "$ALOUD_STORE_B64" | base64 -d > "$HOME/.gradle/aloud-release.jks"
           echo "aloudReleaseStorePassword=$ALOUD_STORE_PASSWORD" >> "$HOME/.gradle/gradle.properties"
       - name: Build signed release
-        run: ./gradlew :app:assembleRelease --console=plain
+        run: ./gradlew :app:assembleRelease :app:bundleRelease --console=plain
       - uses: actions/upload-artifact@v7
         with:
           name: app-release
-          path: app/build/outputs/apk/release/app-release.apk
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
       - name: Attach APK to the release
         uses: softprops/action-gh-release@v3
         with:
