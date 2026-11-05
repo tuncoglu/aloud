@@ -111,9 +111,14 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
 
 ⏸ Bookmarks · skip-silence · volume boost · edit-list (`elst`) offsets ·
 Play Store ($25 + Wear review; sideloading works indefinitely). The release pipeline
-exists since 2026-11-05 (`.github/workflows/play-release.yml`, see AGENTS.md); the Console
-app exists and internal testing holds a draft 0.1.3 (versionCode 3), and production a draft of the
-same build (2026-11-05); the first submission and the Wear review are done in the Console.
+exists since 2026-11-05 (`.github/workflows/play-release.yml`, see AGENTS.md). As of
+2026-11-05 the app is **submitted for review** (11 changes, managed publishing off): Wear OS
+production track `wear:production` holds 0.1.3 (versionCode 3), listing has 4 Wear screenshots,
+178 countries, foreground-service declaration filed (DATA_SYNC: importing/exporting, MEDIA_PLAYBACK,
+each with an unlisted YouTube demo video). A Wear app cannot use the standard production track
+(promote with `tracks=wear`); the standard-track draft is unused. Next: wait for the review,
+then check the release page shows 0.1.3 in production (the release was not listed as a change in
+Publishing overview, so confirm it was included). No phone version (parked).
 
 ## Session-handoff notes
 
