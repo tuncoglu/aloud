@@ -16,7 +16,7 @@
 #   promote-production  point production at an already-uploaded versionCode (no build)
 #
 # Tracks: a Wear OS app can be on Play's standard tracks (internal, production) or on the Wear OS
-# form-factor tracks (wear:qa = internal, wear:production). The `tracks` input picks the pair;
+# form-factor tracks (wear:internal, wear:production). The `tracks` input picks the pair;
 # `status` shows which ones the app has.
 #
 # Version: versionCode / versionName in app/build.gradle.kts; bump them for every upload (Play rejects
@@ -40,7 +40,7 @@ on:
         options: [status, build-check, upload-internal, promote-production]
         default: status
       tracks:
-        description: "Track pair: standard (internal / production) or wear (wear:qa / wear:production)"
+        description: "Track pair: standard (internal / production) or wear (wear:internal / wear:production)"
         type: choice
         options: [standard, wear]
         default: standard
@@ -205,7 +205,7 @@ jobs:
           set -euo pipefail
           case "$TRACKS" in
             standard) internal=internal; production=production ;;
-            wear)     internal=wear:qa;  production=wear:production ;;
+            wear)     internal=wear:internal;  production=wear:production ;;
             *) echo "unknown tracks $TRACKS"; exit 1 ;;
           esac
           case "$ACTION" in
