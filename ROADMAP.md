@@ -112,7 +112,7 @@ Prefix with `JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1`.
 ⏸ Bookmarks · skip-silence · volume boost · edit-list (`elst`) offsets ·
 Play Store ($25 + Wear review; sideloading works indefinitely). The release pipeline
 exists since 2026-11-05 (`.github/workflows/play-release.yml`, see AGENTS.md); the Console
-app, the first bundle and the Wear review are still open.
+app exists and internal testing holds a draft 0.1.3 (versionCode 3); the Wear review is still open.
 
 ## Session-handoff notes
 
