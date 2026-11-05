@@ -77,7 +77,8 @@ The test suite covers M4B chapter parsing, MP3 chapter handling, the uploader
 contract (including PIN enforcement, chunk validation, retries and cleanup), and
 library naming/media-ID rules. CI runs tests, lint and a debug build on every
 push and pull request; tagged builds produce a signed release APK when the
-repository signing secrets are configured.
+repository signing secrets are configured. Google Play releases are started by hand
+from the **Play release** workflow and need the owner's approval.
 
 ## Why this project exists
 

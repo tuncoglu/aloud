@@ -101,6 +101,19 @@ Use the `wear-device-testing` skill. The essentials:
   Pull the APK back off the device and compare hashes:
   `adb pull $(adb shell pm path com.emre.aloud | sed 's/package://')`.
 - Fastlane metadata for IzzyOnDroid lives in `fastlane/metadata/android/en-US/`.
+- **Google Play** goes through `.github/workflows/play-release.yml` (Actions → Play release →
+  Run workflow; added 2026-11-05): `status`, `build-check`, `upload-internal`,
+  `promote-production`, with a `tracks` input for Play's standard tracks or the Wear OS
+  form-factor tracks (`wear:qa` / `wear:production`). The build job signs with a throwaway
+  key; the `play` job (environment `production`, needs the owner's approval, `main` only)
+  re-signs with `aloud-release.jks` from the same two repository secrets, checks the
+  certificate SHA-256 `5A:75:82:00:…:E8:0A`, and gets a one-hour Play token through Workload
+  Identity Federation (GCP project `gen-lang-client-0819398282`, pool `github`, provider
+  `aloud-production`, service account `play-ci-aloud`, no key file). The scripts are in
+  `scripts/play/`. Play takes a new app's first bundle only through the Console. With Play
+  App Signing, Play-installed builds are signed with Google's app key, so they cannot update
+  a sideloaded install (uninstall first, which wipes the library), unless the Console app
+  was set up to use this key as the app signing key.
 
 ## Library conventions
 
