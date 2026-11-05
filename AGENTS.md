@@ -115,7 +115,9 @@ Use the `wear-device-testing` skill. The essentials:
   `scripts/play/`. First status run 2026-11-05 (run 42011448482): the app has both the
   standard tracks and `wear:internal` / `wear:beta` / `wear:production`; internal holds a
   draft 0.1.3 (versionCode 3) uploaded by hand, so the next upload needs versionCode 4.
-  Play takes a new app's first bundle only through the Console. With Play
+  Play takes a new app's first bundle only through the Console. Until the app has been published once
+  ("draft app"), Play only accepts draft releases: `promote-production` then saves a draft and the
+  owner presses Start rollout + Send for review in the Console. With Play
   App Signing, Play-installed builds are signed with Google's app key, so they cannot update
   a sideloaded install (uninstall first, which wipes the library), unless the Console app
   was set up to use this key as the app signing key.
