@@ -123,8 +123,11 @@ after the stale standard-track draft was discarded. So the app is NOT live yet. 
 but the Console STILL shows 4 (0.1.4) as "Superseded · Not published", track Inactive, nothing pending in
 Publishing overview. Console route with the library's code 3 failed ("doesn't allow any existing users to upgrade": 3 < 4).
 Owner chose a fresh release in the same app: 0.1.5 (versionCode 5) built locally with `./gradlew bundleRelease`
-(signed with the upload key, cert verified) and uploaded in the Console to Wear OS production by hand; stop before
-Send for review until the owner approves. No phone version (parked).
+(signed with the upload key, cert verified) and uploaded in the Console to Wear OS production by hand and saved (no errors, one debug-symbols warning). Result: the
+same as 3 and 4: track Inactive, 5 (0.1.5) "Unavailable on Google Play", nothing pending in Publishing overview, so
+there was nothing to Send for review. Hand-uploading was not the difference. Wear OS internal testing works
+(0.1.4 at 100%). Next: Console Inbox / Policy status for a Wear OS production message, then Play support.
+No phone version (parked).
 
 ## Session-handoff notes
 
