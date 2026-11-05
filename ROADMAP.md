@@ -119,7 +119,10 @@ each with an unlisted YouTube demo video). A Wear app cannot use the standard pr
 (promote with `tracks=wear`). Result 2026-11-05: the listing and declarations were published, but the
 Console showed Wear release 3 (0.1.3) as "Superseded by another release · Not published" (0 installs), also
 after the stale standard-track draft was discarded. So the app is NOT live yet. Fix in progress: 0.1.4
-(versionCode 4) via `upload-internal` then `promote-production` with `tracks=wear`. No phone version (parked).
+(versionCode 4) uploaded (run 42087600209) and promoted to `wear:production` as completed (run 42088398417),
+but the Console STILL shows 4 (0.1.4) as "Superseded · Not published", track Inactive, nothing pending in
+Publishing overview. Next: roll it out by hand in the Console (Wear OS production > Create new release > add
+code 4 > Send for review), or look at Recovery tools. No phone version (parked).
 
 ## Session-handoff notes
 
