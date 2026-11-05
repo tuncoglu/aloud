@@ -116,9 +116,10 @@ exists since 2026-11-05 (`.github/workflows/play-release.yml`, see AGENTS.md). A
 production track `wear:production` holds 0.1.3 (versionCode 3), listing has 4 Wear screenshots,
 178 countries, foreground-service declaration filed (DATA_SYNC: importing/exporting, MEDIA_PLAYBACK,
 each with an unlisted YouTube demo video). A Wear app cannot use the standard production track
-(promote with `tracks=wear`); the standard-track draft is unused. Next: wait for the review,
-then check the release page shows 0.1.3 in production (the release was not listed as a change in
-Publishing overview, so confirm it was included). No phone version (parked).
+(promote with `tracks=wear`). Result 2026-11-05: the listing and declarations were published, but the
+Console showed Wear release 3 (0.1.3) as "Superseded by another release · Not published" (0 installs), also
+after the stale standard-track draft was discarded. So the app is NOT live yet. Fix in progress: 0.1.4
+(versionCode 4) via `upload-internal` then `promote-production` with `tracks=wear`. No phone version (parked).
 
 ## Session-handoff notes
 
