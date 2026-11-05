@@ -15,7 +15,9 @@ export JAVA_HOME=/home/emre/.jdks/temurin-21.0.12.1
 
 Release signing uses `~/.gradle/aloud-release.jks` (alias `aloud`, password in
 `~/.gradle/gradle.properties` as `aloudReleaseStorePassword`). CI decodes the same
-keystore from the `ALOUD_STORE_B64` secret, so locally built and CI-built release
+keystore from the `ALOUD_STORE_B64` / `ALOUD_STORE_PASSWORD` secrets of the `production`
+environment (since 2026-11-05; only jobs the owner approves, from `main` or a `v*` tag,
+can read them, so a tag release also waits for approval), so locally built and CI-built release
 APKs are interchangeable for install purposes.
 
 ## Traps that have already cost real time
@@ -106,7 +108,7 @@ Use the `wear-device-testing` skill. The essentials:
   `promote-production`, with a `tracks` input for Play's standard tracks or the Wear OS
   form-factor tracks (`wear:qa` / `wear:production`). The build job signs with a throwaway
   key; the `play` job (environment `production`, needs the owner's approval, `main` only)
-  re-signs with `aloud-release.jks` from the same two repository secrets, checks the
+  re-signs with `aloud-release.jks` from the same two environment secrets, checks the
   certificate SHA-256 `5A:75:82:00:…:E8:0A`, and gets a one-hour Play token through Workload
   Identity Federation (GCP project `gen-lang-client-0819398282`, pool `github`, provider
   `aloud-production`, service account `play-ci-aloud`, no key file). The scripts are in

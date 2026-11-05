@@ -26,8 +26,9 @@
 # environment `production`, ref main, workflow_dispatch and this workflow file), service account
 # `play-ci-aloud` (no keys) invited in Play Console for this app only. GitHub side = environment
 # `production` with required reviewer and branch `main`, repository variables GCP_WIF_PROVIDER +
-# PLAY_SERVICE_ACCOUNT, and the existing repository secrets ALOUD_STORE_B64 / ALOUD_STORE_PASSWORD
-# (~/.gradle/aloud-release.jks, alias aloud, key password = store password), which ci.yml also uses.
+# PLAY_SERVICE_ACCOUNT, and the environment's secrets ALOUD_STORE_B64 / ALOUD_STORE_PASSWORD
+# (~/.gradle/aloud-release.jks, alias aloud, key password = store password), which ci.yml's tag
+# release job also uses (it runs in the same environment, so it waits for approval too).
 name: Play release
 
 on:
