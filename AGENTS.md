@@ -115,7 +115,7 @@ Use the `wear-device-testing` skill. The essentials:
   `scripts/play/`. First status run 2026-11-05 (run 42011448482): the app has both the
   standard tracks and `wear:internal` / `wear:beta` / `wear:production`; internal holds a
   draft 0.1.3 (versionCode 3) uploaded by hand, so the next upload needs versionCode 4.
-  Version code 3 ended up "superseded / not published" on `wear:production` (2026-11-05); the app ships as 0.1.4 (code 4).
+  Version code 3 ended up "superseded / not published" on `wear:production` (2026-11-05); API-promoted code 4 also showed "Not published"; fresh Console-uploaded 0.1.5 (code 5) is the next attempt.
   Play takes a new app's first bundle only through the Console. Until the app has been published once
   ("draft app"), Play only accepts draft releases: `promote-production` then saves a draft and the
   owner presses Start rollout + Send for review in the Console. With Play

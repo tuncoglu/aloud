@@ -11,8 +11,8 @@ android {
         applicationId = "com.emre.aloud"
         minSdk = 30
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.1.4"
+        versionCode = 5
+        versionName = "0.1.5"
     }
 
     buildFeatures {
